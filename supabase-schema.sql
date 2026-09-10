@@ -1,0 +1,12 @@
+-- BabyBat Game Hub backend is already provisioned in the dedicated Supabase project:
+-- project name: babybat-game-hub
+-- project ref: mbxevizxcwmmldjtbksq
+--
+-- IMPORTANT: Do NOT run an old prototype schema against bsb-archives.
+-- The live schema is migration-managed in the BabyBat project and includes:
+-- profiles, game_entities, games, game_memberships, directives, scoring_rules,
+-- point_transactions, reward_tiers, rewards, rulebook_sections, chat_threads,
+-- chat_messages, RLS policies, reward-unlock triggers and Realtime publication.
+--
+-- This file is intentionally informational so the downloaded app cannot accidentally
+-- create duplicate/outdated tables in the wrong Supabase project.

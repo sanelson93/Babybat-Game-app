@@ -1,0 +1,10 @@
+{
+  "name": "BabyBat Game Hub",
+  "short_name": "BabyBat",
+  "start_url": "./",
+  "display": "standalone",
+  "background_color": "#090a0c",
+  "theme_color": "#090a0c",
+  "description": "Live multi-game point, reward, rulebook and Game Master tracker for Sovereign Circle and Nocturne Collective.",
+  "icons": []
+}
