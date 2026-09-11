@@ -1,4 +1,4 @@
-# BabyBat Game Hub — v2.1
+# BabyBat Game Hub — v2.2
 
 Mobile-first PWA for the Sovereign Circle / Nocturne Collective game.
 
@@ -40,3 +40,12 @@ Character images live under ``. The database stores their relative paths so orga
 - Character/logo asset URLs are deployment-relative rather than root-absolute.
 - PWA cache key bumped and all shipped images are precached.
 - Live Supabase image paths should use `...` (the client also normalizes legacy `/...` paths).
+
+
+## v2.2 — Bulk Ledger Paste
+- Admin and Game Master can paste whole scoring notices or spreadsheet/CSV/TSV/pipe-delimited ledger rows.
+- Parser recognizes directive headers such as `SD-003` and scoring rows such as `Directive Completed +10`.
+- Preview shows row count, duplicates, validation issues, and net point change before posting.
+- Existing directive/category/point combinations are flagged as duplicates and excluded by default.
+- Missing directives are created automatically at import time.
+- Import posts all accepted scoring rows to the existing immutable point ledger; rewards continue to unlock from the same database trigger.

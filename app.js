@@ -1,4 +1,4 @@
-const UI_STORAGE = 'babybat-game-hub-ui-v211';
+const UI_STORAGE = 'babybat-game-hub-ui-v22';
 const CONFIG = window.BABYBAT_CONFIG;
 const { createClient } = window.supabase;
 const db = createClient(CONFIG.supabaseUrl, CONFIG.supabasePublishableKey, {
@@ -92,6 +92,9 @@ let scoringRules = [];
 let ruleSections = [];
 let realtimeChannel = null;
 let realtimeTimer = null;
+let bulkLedgerRows = [];
+let bulkLedgerIgnored = [];
+
 
 function loadUI(){
   try { return {activePage:'home', demo:false, demoViewer:'shawn', adminView:'admin', orgSlug:'sovereign-circle', ...JSON.parse(localStorage.getItem(UI_STORAGE)||'{}')}; }
@@ -235,7 +238,7 @@ function redeemedArchive(rr=rewardRows()){const xs=rr.filter(r=>r.status==='used
 function admin(){
   const r=effectiveRole(), rr=rewardRows(), gm=['game_master','admin'].includes(r);
   const playerUpgrade=accountRole()==='player' && !ui.demo;
-  return `<main class="page"><section class="section" style="margin-top:4px"><div class="section-head"><h2>${r==='admin'?'Site Administration':gm?'Game Master':'Administration'}</h2><span>${r==='admin'?'full access':gm?'Nocturne permissions':'Sovereign access'}</span></div>${gm?awardForm():`<div class="card"><h3 style="margin-top:0">Permission Model</h3><p class="small-note">Your current game role is <strong>${roleLabel()}</strong>. Players can view the ledger and use unlocked rewards. Game Master/Admin roles can post score transactions.</p></div>`}${playerUpgrade?adminUpgradeCard():''}</section>
+  return `<main class="page"><section class="section" style="margin-top:4px"><div class="section-head"><h2>${r==='admin'?'Site Administration':gm?'Game Master':'Administration'}</h2><span>${r==='admin'?'full access':gm?'Nocturne permissions':'Sovereign access'}</span></div>${gm?awardForm()+bulkLedgerForm():`<div class="card"><h3 style="margin-top:0">Permission Model</h3><p class="small-note">Your current game role is <strong>${roleLabel()}</strong>. Players can view the ledger and use unlocked rewards. Game Master/Admin roles can post score transactions.</p></div>`}${playerUpgrade?adminUpgradeCard():''}</section>
   <section class="section"><div class="section-head"><h2>Reward Control</h2><span>shared object</span></div>${adminRewards(rr)}</section>
   ${r==='admin'?`<section class="section"><div class="section-head"><h2>Admin Preview</h2><span>cosmetic QA</span></div><div class="card"><p class="small-note">Use the View As switch above to inspect the exact Shawn and Moxie layouts. Preview actions are intentionally disabled so QA cannot accidentally alter live points or rewards.</p></div></section>`:''}
   ${ui.demo?`<section class="section"><div class="card"><button class="secondary" onclick="toggleDemoViewer()">Preview ${ui.demoViewer==='moxie'?'Shawn / Player':'Moxie / Game Master'}</button><button class="danger" style="margin-left:8px" onclick="leaveDemo()">Exit Demo</button></div></section>`:`<section class="section"><div class="section-head"><h2>Account</h2><span>Supabase Auth</span></div><div class="card"><p class="small-note">${esc(session?.user?.email||'')}<br>Account role: ${roleLabel(accountRole())} · Live sync enabled</p><div class="row"><button class="secondary" onclick="syncNow()">Sync Now</button><button class="danger" onclick="signOut()">Sign Out</button></div></div></section>`}</main>`;
@@ -244,6 +247,137 @@ function adminUpgradeCard(){return `<div class="card admin-upgrade"><div class="
 function awardForm(){
   const options=scoreRows().filter(s=>Number(s.points)!==0).map(s=>`<option value="${esc(s.label)}" data-points="${Number(s.points)}">${esc(s.label)} (${Number(s.points)>0?'+':''}${Number(s.points)})</option>`).join('');
   return `<div class="card"><h3 style="margin-top:0">Award Points to Sovereign Circle</h3>${previewReadOnly()?`<div class="notice">Preview only — this is exactly where Moxie sees scoring controls, but posting is disabled.</div>`:''}<div class="form-grid"><div class="row"><div class="field"><label>Directive</label><input id="aDirective" class="input" value="SD-003" ${previewReadOnly()?'disabled':''}></div><div class="field"><label>Points</label><input id="aPoints" class="input" type="number" min="-100" max="500" value="10" ${previewReadOnly()?'disabled':''}></div></div><div class="field"><label>Scoring Category</label><select id="aCategory" class="input" onchange="categoryChanged()" ${previewReadOnly()?'disabled':''}><option value="Manual Award">Manual Award</option>${options}</select></div><div class="field"><label>Reason</label><input id="aReason" class="input" placeholder="Directive completed…" ${previewReadOnly()?'disabled':''}></div><button id="awardButton" class="primary" ${previewReadOnly()?'disabled':''} onclick="${previewReadOnly()?'previewOnly()':'awardPoints()'}">Post to Ledger</button></div></div>`;
+}
+function bulkLedgerForm(){
+  const rows=bulkLedgerRows||[];
+  const importable=rows.filter(r=>r.valid&&!r.duplicate);
+  const duplicates=rows.filter(r=>r.duplicate).length;
+  const invalid=rows.filter(r=>!r.valid).length;
+  const totalPts=importable.reduce((a,r)=>a+Number(r.points||0),0);
+  const hasPreview=rows.length>0||bulkLedgerIgnored.length>0;
+  const preview=hasPreview?`<div class="bulk-preview">
+    <div class="bulk-summary"><div><strong>${importable.length}</strong><span>ready</span></div><div><strong>${duplicates}</strong><span>duplicates</span></div><div><strong>${invalid}</strong><span>needs review</span></div><div><strong class="${totalPts<0?'negative':''}">${totalPts>0?'+':''}${totalPts}</strong><span>net points</span></div></div>
+    ${rows.length?`<div class="bulk-table">${rows.map((r,i)=>bulkPreviewRow(r,i)).join('')}</div>`:''}
+    ${bulkLedgerIgnored.length?`<details class="bulk-ignored"><summary>${bulkLedgerIgnored.length} ignored line${bulkLedgerIgnored.length===1?'':'s'}</summary><div>${bulkLedgerIgnored.map(x=>`<code>${esc(x)}</code>`).join('')}</div></details>`:''}
+    <div class="row"><button class="secondary" onclick="clearBulkLedger()">Clear</button><button id="bulkImportButton" class="primary" ${previewReadOnly()||!importable.length?'disabled':''} onclick="${previewReadOnly()?'previewOnly()':'importBulkLedger()'}">Import ${importable.length} Row${importable.length===1?'':'s'}</button></div>
+  </div>`:'';
+  return `<div class="card bulk-ledger-card"><div class="bulk-title"><div><div class="eyebrow">Fast Entry</div><h3>Paste Ledger</h3></div><span class="badge">BULK</span></div><p class="small-note">Paste a scoring notice, spreadsheet rows, tab-separated data, CSV, or pipe-delimited text. Nothing posts until you preview and confirm.</p>${previewReadOnly()?`<div class="notice">Preview only — Moxie sees this importer, but Admin QA cannot post from preview mode.</div>`:''}<div class="field"><label>Ledger Text</label><textarea id="bulkLedgerText" class="input bulk-textarea" ${previewReadOnly()?'disabled':''} placeholder="SD-003\nDirective Completed +10\nAbove & Beyond +5\nMoxie Melt +3\nReason: Submission accepted"></textarea></div><div class="bulk-help"><span>Also accepts:</span><code>SD-003 | Category | +10 | Reason</code></div><button class="secondary bulk-parse" ${previewReadOnly()?'disabled':''} onclick="${previewReadOnly()?'previewOnly()':'previewBulkLedger()'}">Preview Paste</button>${preview}</div>`;
+}
+function bulkPreviewRow(r,i){
+  const state=!r.valid?'invalid':r.duplicate?'duplicate':r.ruleMismatch?'warning':'ready';
+  const status=!r.valid?'Review':r.duplicate?'Duplicate':r.ruleMismatch?'Points differ':'Ready';
+  return `<div class="bulk-row ${state}"><div class="bulk-row-main"><div><strong>${esc(r.directive||'—')}</strong><span>${esc(r.category||'Missing category')}</span></div><b class="points ${Number(r.points)<0?'negative':''}">${Number.isFinite(Number(r.points))?(Number(r.points)>0?'+':'')+Number(r.points):'—'}</b></div>${r.reason?`<p>${esc(r.reason)}</p>`:''}${r.message?`<small>${esc(r.message)}</small>`:''}<span class="bulk-status">${status}</span></div>`;
+}
+function normalizeDirectiveCode(value=''){
+  const text=String(value).trim();
+  const m=text.match(/(?:\bSD\b|SOVEREIGN\s+DIRECTIVE)\s*[-#:]?\s*(\d{1,4})/i);
+  if(!m) return '';
+  return `SD-${String(Number(m[1])).padStart(3,'0')}`;
+}
+function cleanBulkLine(line=''){
+  return String(line).replace(/^\s*[•*▶►▪◦]+\s*/,'').replace(/^\s*[-–—]\s+(?=[A-Za-z])/,'').trim();
+}
+function parseCsvLine(line){
+  const out=[]; let cur=''; let quoted=false;
+  for(let i=0;i<line.length;i++){
+    const ch=line[i];
+    if(ch==='"'){
+      if(quoted&&line[i+1]==='"'){cur+='"';i++;}
+      else quoted=!quoted;
+    }else if(ch===','&&!quoted){out.push(cur.trim());cur='';}
+    else cur+=ch;
+  }
+  out.push(cur.trim()); return out;
+}
+function splitBulkColumns(line){
+  if(line.includes('\t')) return line.split('\t').map(x=>x.trim());
+  if(line.includes('|')) return line.split('|').map(x=>x.trim());
+  if((line.match(/,/g)||[]).length>=2) return parseCsvLine(line);
+  return null;
+}
+function parsePointValue(value){
+  const m=String(value??'').replace(/\s+/g,'').match(/^([+-]?\d+)\s*(?:pts?|points?)?$/i);
+  return m?Number(m[1]):NaN;
+}
+function isBulkHeader(cols){
+  const text=cols.map(x=>String(x).toLowerCase()).join(' ');
+  return text.includes('directive')&&text.includes('category')&&text.includes('point');
+}
+function existingLedgerSignatures(){
+  const dmap=new Map(directives.map(d=>[d.id,normalizeDirectiveCode(d.code)||String(d.code).toUpperCase()]));
+  const set=new Set();
+  for(const pt of pointTransactions){
+    const code=dmap.get(pt.directive_id)||'';
+    const key=`${code}|${String(pt.category||'').trim().toLowerCase()}|${Number(pt.points)}`;
+    set.add(key);
+  }
+  return set;
+}
+function parseBulkLedger(text){
+  const lines=String(text||'').split(/\r?\n/).map(cleanBulkLine).filter(Boolean);
+  const rows=[]; const ignored=[]; let currentDirective=''; let pendingReason='';
+  for(const original of lines){
+    const line=original.trim();
+    const directOnly=normalizeDirectiveCode(line);
+    const isDirectiveHeading=/^(?:SD\s*[-#:]?\s*\d{1,4}|SOVEREIGN\s+DIRECTIVE\s*[-#:]?\s*\d{1,4})(?:\s*(?:ACCEPTED|COMPLETED|SCORED))?$/i.test(line);
+    if(directOnly && isDirectiveHeading){
+      currentDirective=directOnly; continue;
+    }
+    if(/^reason\s*:/i.test(line)){
+      pendingReason=line.replace(/^reason\s*:/i,'').trim();
+      if(currentDirective&&pendingReason) rows.forEach(r=>{if(r.directive===currentDirective&&!r.reason)r.reason=pendingReason});
+      continue;
+    }
+    if(/^(total|current\s+total|new\s+total|lifetime|reward|points?\s+to)\b/i.test(line)){ignored.push(line);continue;}
+    const cols=splitBulkColumns(line);
+    if(cols&&isBulkHeader(cols)){ignored.push(line);continue;}
+    if(cols&&cols.length>=2){
+      let directive=''; let category=''; let points=NaN; let reason='';
+      const firstCode=normalizeDirectiveCode(cols[0]);
+      const lastCode=normalizeDirectiveCode(cols[cols.length-1]);
+      if(firstCode){
+        directive=firstCode; currentDirective=directive; category=cols[1]||''; points=parsePointValue(cols[2]); reason=cols.slice(3).join(' | ');
+      }else if(lastCode){
+        directive=lastCode; currentDirective=directive; category=cols[0]||''; points=parsePointValue(cols[1]); reason=cols.slice(2,-1).join(' | ');
+      }else{
+        directive=currentDirective; category=cols[0]||''; points=parsePointValue(cols[1]); reason=cols.slice(2).join(' | ');
+      }
+      if(Number.isNaN(points)&&cols.length>=3){
+        const pointIndex=cols.findIndex(c=>Number.isFinite(parsePointValue(c)));
+        if(pointIndex>=0){points=parsePointValue(cols[pointIndex]);category=cols.filter((_,i)=>i!==pointIndex&&!normalizeDirectiveCode(cols[i]))[0]||category;}
+      }
+      rows.push({directive,category:category.replace(/^category\s*:\s*/i,''),points,reason:reason||pendingReason,raw:line});
+      continue;
+    }
+    const scoreMatch=line.match(/^(.*?)(?:\s*[:=–—-]?\s*)([+-]\s*\d+)\s*(?:pts?|points?)?\s*$/i);
+    if(scoreMatch){
+      let category=scoreMatch[1].trim();
+      let directive=normalizeDirectiveCode(category)||currentDirective;
+      if(normalizeDirectiveCode(category)) category=category.replace(/(?:\bSD\b|SOVEREIGN\s+DIRECTIVE)\s*[-#:]?\s*\d{1,4}\s*[:|—-]?\s*/i,'').trim();
+      if(!category||/^(total|score)$/i.test(category)){ignored.push(line);continue;}
+      if(directive) currentDirective=directive;
+      rows.push({directive,category,points:Number(scoreMatch[2].replace(/\s+/g,'')),reason:pendingReason,raw:line});
+      continue;
+    }
+    ignored.push(line);
+  }
+  const existing=existingLedgerSignatures(); const seen=new Set(); const rules=new Map(scoreRows().map(r=>[String(r.label??r[0]).trim().toLowerCase(),Number(r.points??r[1])]));
+  rows.forEach(r=>{
+    r.directive=normalizeDirectiveCode(r.directive)||String(r.directive||'').trim().toUpperCase();
+    r.category=String(r.category||'').trim();
+    r.valid=Boolean(r.directive&&r.category&&Number.isFinite(Number(r.points))&&Number(r.points)!==0);
+    if(!r.directive) r.message='No directive found. Add SD-### to the paste.';
+    else if(!r.category) r.message='Scoring category is missing.';
+    else if(!Number.isFinite(Number(r.points))||Number(r.points)===0) r.message='Points must be a non-zero number.';
+    const sig=`${r.directive}|${r.category.toLowerCase()}|${Number(r.points)}`;
+    r.duplicate=r.valid&&(existing.has(sig)||seen.has(sig));
+    if(r.duplicate) r.message='Already exists in the ledger (or appears twice in this paste); excluded from import.';
+    if(r.valid&&!r.duplicate) seen.add(sig);
+    const expected=rules.get(r.category.toLowerCase());
+    r.ruleMismatch=r.valid&&!r.duplicate&&Number.isFinite(expected)&&expected!==Number(r.points);
+    if(r.ruleMismatch) r.message=`Published rule is ${expected>0?'+':''}${expected}; pasted value is ${Number(r.points)>0?'+':''}${Number(r.points)}. It can still be imported.`;
+  });
+  return {rows,ignored};
 }
 function adminRewards(rr){const av=rr.filter(r=>r.status==='available');if(!av.length)return `<div class="empty">No available rewards to redeem.</div>`;return av.map(r=>`<div class="card reward-card"><div class="reward-icon">◆</div><div class="reward-main"><h3>${esc(r.tier)} Reward</h3><p>Milestone ${r.milestone}</p></div>${canRedeemView()?`<button class="use-btn" ${previewReadOnly()?'disabled':''} onclick="${previewReadOnly()?'previewOnly()':`askRedeem('${r.id}')`}">${isGMView()?"USE SHAWN'S":'USE'}</button>`:''}</div>`).join('')}
 
@@ -386,6 +520,46 @@ window.redeem=async id=>{
   if(previewReadOnly()){closeModal();previewOnly();return}
   const {error}=await db.from('rewards').update({status:'used'}).eq('id',id).eq('status','available');
   if(error){toast(error.message);return}closeModal();await loadRemote();toast('Reward moved to redeemed history')
+}
+window.previewBulkLedger=()=>{
+  if(ui.demo){toast('Demo paste preview is available, but imports stay disabled');}
+  const text=document.getElementById('bulkLedgerText')?.value||'';
+  if(!text.trim()){bulkLedgerRows=[];bulkLedgerIgnored=[];render();toast('Paste ledger text first');return}
+  const parsed=parseBulkLedger(text); bulkLedgerRows=parsed.rows; bulkLedgerIgnored=parsed.ignored; render();
+  const ready=bulkLedgerRows.filter(r=>r.valid&&!r.duplicate).length;
+  toast(`${ready} ledger row${ready===1?'':'s'} ready to import`);
+}
+window.clearBulkLedger=()=>{bulkLedgerRows=[];bulkLedgerIgnored=[];render();}
+window.importBulkLedger=async()=>{
+  if(ui.demo){toast('Demo import does not alter the live database');return}
+  if(previewReadOnly()){previewOnly();return}
+  if(!['game_master','admin'].includes(accountRole())){toast('Game Master permission required');return}
+  const rows=bulkLedgerRows.filter(r=>r.valid&&!r.duplicate);
+  if(!rows.length){toast('No new valid ledger rows to import');return}
+  const btn=document.getElementById('bulkImportButton');if(btn){btn.disabled=true;btn.textContent='Importing…'}
+  try{
+    const codes=[...new Set(rows.map(r=>r.directive))];
+    const known=new Map(directives.map(d=>[(normalizeDirectiveCode(d.code)||String(d.code).toUpperCase()),d]));
+    const missing=codes.filter(c=>!known.has(c));
+    if(missing.length){
+      const now=new Date().toISOString();
+      const ins=await db.from('directives').insert(missing.map(code=>({game_id:game.id,code,title:code,status:'scored',issued_by_user_id:session.user.id,issued_at:now,completed_at:now}))).select();
+      if(ins.error) throw ins.error;
+      for(const d of ins.data||[]) known.set(normalizeDirectiveCode(d.code)||String(d.code).toUpperCase(),d);
+    }
+    const unresolved=codes.filter(c=>!known.has(c));
+    if(unresolved.length){
+      const q=await db.from('directives').select('*').eq('game_id',game.id).in('code',unresolved);
+      if(q.error) throw q.error;
+      for(const d of q.data||[]) known.set(normalizeDirectiveCode(d.code)||String(d.code).toUpperCase(),d);
+    }
+    const payload=rows.map(r=>({game_id:game.id,directive_id:known.get(r.directive)?.id,points:Number(r.points),category:r.category,reason:r.reason||'Bulk ledger import.',source:'game_master',awarded_by_user_id:session.user.id}));
+    if(payload.some(x=>!x.directive_id)) throw new Error('Could not resolve one or more directive IDs. Sync and try again.');
+    const tx=await db.from('point_transactions').insert(payload);
+    if(tx.error) throw tx.error;
+    const net=rows.reduce((a,r)=>a+Number(r.points),0); bulkLedgerRows=[];bulkLedgerIgnored=[];
+    await loadRemote();toast(`${rows.length} rows imported · ${net>0?'+':''}${net} net points`);
+  }catch(e){toast(e?.message||String(e));if(btn){btn.disabled=false;btn.textContent='Import Rows'}}
 }
 window.awardPoints=async()=>{
   if(ui.demo){toast('Demo award controls do not alter the live database');return}
