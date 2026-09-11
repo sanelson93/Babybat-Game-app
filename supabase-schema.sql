@@ -1,12 +1,14 @@
 -- BabyBat Game Hub backend is already provisioned in the dedicated Supabase project:
--- project name: babybat-game-hub
--- project ref: mbxevizxcwmmldjtbksq
+-- project: babybat-game-hub
+-- ref: mbxevizxcwmmldjtbksq
 --
--- IMPORTANT: Do NOT run an old prototype schema against bsb-archives.
--- The live schema is migration-managed in the BabyBat project and includes:
+-- v2.1 database migrations are already applied in production, including:
 -- profiles, game_entities, games, game_memberships, directives, scoring_rules,
--- point_transactions, reward_tiers, rewards, rulebook_sections, chat_threads,
--- chat_messages, RLS policies, reward-unlock triggers and Realtime publication.
+-- point_transactions, reward_tiers, rewards, rulebook_sections,
+-- access_claims, organization_members, RLS policies, reward-unlock triggers,
+-- one-time access claims, and Realtime publication.
 --
--- This file is intentionally informational so the downloaded app cannot accidentally
+-- The old chat_threads/chat_messages tables were removed in v2.1.
+--
+-- This file is intentionally documentation-only so a deploy cannot accidentally
 -- create duplicate/outdated tables in the wrong Supabase project.
