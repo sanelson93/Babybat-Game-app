@@ -36,3 +36,6 @@ body[data-theme="sovereign"]{--green:#49d17d;--green2:#237f4c}
 .admin-upgrade{margin-top:10px;border-color:#4f4228;background:linear-gradient(145deg,#191711,#101216)}.admin-upgrade h3{margin:5px 0 5px}.admin-upgrade .primary{width:100%;margin-top:10px}
 .nav{grid-template-columns:repeat(5,1fr)}
 @media(max-width:380px){.role-pill{display:none}.hero-brand>img{width:65px;height:65px}.member-grid{gap:8px}.member-copy{padding:10px}.view-switch{grid-template-columns:auto repeat(3,1fr)}}
+
+/* v2.1.1 asset fallback */
+.member-photo.image-failed::after{content:'IMAGE UNAVAILABLE';height:100%;display:grid;place-items:center;font-size:9px;letter-spacing:.12em;color:var(--muted);background:radial-gradient(circle,#1b241d,#0b0d10 70%)}
