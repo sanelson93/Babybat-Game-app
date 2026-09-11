@@ -7,30 +7,30 @@ const db = createClient(CONFIG.supabaseUrl, CONFIG.supabasePublishableKey, {
 
 const DEMO = {
   entities: [
-    {slug:'sovereign-circle',name:'Sovereign Circle',entity_type:'circle',logo_path:'assets/sovereign-circle-logo.webp',theme_key:'sovereign',tagline:'Strategy. Loyalty. Control.'},
-    {slug:'nocturne-collective',name:'Nocturne Collective',entity_type:'collective',logo_path:'assets/nocturne-collective-logo.webp',theme_key:'nocturne',tagline:"We don't follow the light. We run the night."},
+    {slug:'sovereign-circle',name:'Sovereign Circle',entity_type:'circle',logo_path:'sovereign-circle-logo.webp',theme_key:'sovereign',tagline:'Strategy. Loyalty. Control.'},
+    {slug:'nocturne-collective',name:'Nocturne Collective',entity_type:'collective',logo_path:'nocturne-collective-logo.webp',theme_key:'nocturne',tagline:"We don't follow the light. We run the night."},
     {slug:'infernal-firm',name:'Infernal Firm',entity_type:'firm',logo_path:null,theme_key:'infernal',tagline:'Reserved for the next game.'}
   ],
   members: [
-    ['sovereign-circle','Shawn','Chair','Executive Command','CEO / Chair','assets/sc-shawn.webp',10],
-    ['sovereign-circle','Sir','Brat Tamer','Discipline & Dynamics','Chief Brat Tamer','assets/sc-sir.webp',20],
-    ['sovereign-circle','Saint','Caregiver','Care & Welfare','Chief Caretaker','assets/sc-saint.webp',30],
-    ['sovereign-circle','Sphinx','Strategist','Strategy & Voice','Chief Strategist','assets/sc-sphinx.webp',40],
+    ['sovereign-circle','Shawn','Chair','Executive Command','CEO / Chair','sc-shawn.webp',10],
+    ['sovereign-circle','Sir','Brat Tamer','Discipline & Dynamics','Chief Brat Tamer','sc-sir.webp',20],
+    ['sovereign-circle','Saint','Caregiver','Care & Welfare','Chief Caretaker','sc-saint.webp',30],
+    ['sovereign-circle','Sphinx','Strategist','Strategy & Voice','Chief Strategist','sc-sphinx.webp',40],
     ['sovereign-circle','Silk','Connection','Warmth & Connection','Director of Connection',null,50],
-    ['sovereign-circle','Sinister','Corruption & Punishment','Chaos & Consequences','Director of Chaos & Consequences','assets/sc-sinister.webp',60],
-    ['sovereign-circle','Scales','Rules & Interpretation','Oversight, Compliance & Legal Strategy','Chief of Rules & Interpretation','assets/sc-scales.webp',70],
-    ['sovereign-circle','Sigma','Findom','Finance','Chief Financial Officer','assets/sc-sigma.webp',80],
-    ['sovereign-circle','Sage','Personal Assistant','Executive Administration & Personnel','Executive Assistant / Director of Personnel','assets/sc-sage.webp',90],
-    ['nocturne-collective','Moxie','Praise-Oriented Submissive','Executive Relations & Validation','Executive Director of Night Operations','assets/nc-moxie.webp',10],
-    ['nocturne-collective','Vega','Emotional Support Sub','Finance, Scoring & Audit','Chief Financial Officer','assets/nc-vega.webp',20],
-    ['nocturne-collective','Dusk','Bat','Morale, Affection & Distraction','Chief Distraction Officer','assets/nc-dusk.webp',30],
-    ['nocturne-collective','Cress','Princess','Connection, Reassurance & Confidence','Director of Relational Dynamics','assets/nc-cress.webp',40],
-    ['nocturne-collective','Jinx','Chaos Gremlin','Special Projects, Innovation & Unforeseen Consequences','Director of Chaotic Operations','assets/nc-jinx.webp',50],
-    ['nocturne-collective','Eclipse','Corporate','Administration, Oversight & Internal Review','Chief Administrative Officer','assets/nc-eclipse.webp',60],
-    ['nocturne-collective','Sable','Sensual Prey','Desire & Pursuit','Director of Pursuit Dynamics','assets/nc-sable.webp',70],
-    ['nocturne-collective','Selene','Bedroom Submissive','Surrender & Vulnerability','Director of Private Surrender','assets/nc-selene.webp',80],
-    ['nocturne-collective','Nyx','Brat','Opposition, Loopholes & Technical Compliance','Director of Adversarial Compliance','assets/nc-nyx.webp',90],
-    ['nocturne-collective','Ember','Caregiver','Care, Wellness & Office Operations','Chief Care Officer','assets/nc-ember.webp',100]
+    ['sovereign-circle','Sinister','Corruption & Punishment','Chaos & Consequences','Director of Chaos & Consequences','sc-sinister.webp',60],
+    ['sovereign-circle','Scales','Rules & Interpretation','Oversight, Compliance & Legal Strategy','Chief of Rules & Interpretation','sc-scales.webp',70],
+    ['sovereign-circle','Sigma','Findom','Finance','Chief Financial Officer','sc-sigma.webp',80],
+    ['sovereign-circle','Sage','Personal Assistant','Executive Administration & Personnel','Executive Assistant / Director of Personnel','sc-sage.webp',90],
+    ['nocturne-collective','Moxie','Praise-Oriented Submissive','Executive Relations & Validation','Executive Director of Night Operations','nc-moxie.webp',10],
+    ['nocturne-collective','Vega','Emotional Support Sub','Finance, Scoring & Audit','Chief Financial Officer','nc-vega.webp',20],
+    ['nocturne-collective','Dusk','Bat','Morale, Affection & Distraction','Chief Distraction Officer','nc-dusk.webp',30],
+    ['nocturne-collective','Cress','Princess','Connection, Reassurance & Confidence','Director of Relational Dynamics','nc-cress.webp',40],
+    ['nocturne-collective','Jinx','Chaos Gremlin','Special Projects, Innovation & Unforeseen Consequences','Director of Chaotic Operations','nc-jinx.webp',50],
+    ['nocturne-collective','Eclipse','Corporate','Administration, Oversight & Internal Review','Chief Administrative Officer','nc-eclipse.webp',60],
+    ['nocturne-collective','Sable','Sensual Prey','Desire & Pursuit','Director of Pursuit Dynamics','nc-sable.webp',70],
+    ['nocturne-collective','Selene','Bedroom Submissive','Surrender & Vulnerability','Director of Private Surrender','nc-selene.webp',80],
+    ['nocturne-collective','Nyx','Brat','Opposition, Loopholes & Technical Compliance','Director of Adversarial Compliance','nc-nyx.webp',90],
+    ['nocturne-collective','Ember','Caregiver','Care, Wellness & Office Operations','Chief Care Officer','nc-ember.webp',100]
   ].map((m,i)=>({id:`demo-${i}`,entity_slug:m[0],name:m[1],role_name:m[2],department:m[3],position_title:m[4],image_path:m[5],sort_order:m[6]})),
   ledger: [
     {id:'sd001',directive:'SD-001',date:'2026-08-31',title:'Sovereign Directive #001',total:19,reason:'Official scoring notice from Moxie / Nocturne.',breakdown:[['Directive Completed',10],['Above & Beyond',5],['Chaos Bonus',2],['No Bullshit Completion',2]]},
@@ -122,7 +122,7 @@ function viewTheme(){ return effectiveRole()==='game_master'?'nocturne':'soverei
 
 function icon(name){const icons={home:'<path d="M3 11.5 12 4l9 7.5v8a1 1 0 0 1-1 1h-5v-6H9v6H4a1 1 0 0 1-1-1z"/>',book:'<path d="M4 4.5A2.5 2.5 0 0 1 6.5 2H11v18H6.5A2.5 2.5 0 0 0 4 22zM20 4.5A2.5 2.5 0 0 0 17.5 2H13v18h4.5A2.5 2.5 0 0 1 20 22z"/>',ledger:'<path d="M5 3h14v18H5zM8 7h8M8 11h8M8 15h5"/>',org:'<path d="M12 3a3 3 0 1 1 0 6 3 3 0 0 1 0-6ZM5 11a2.5 2.5 0 1 1 0 5 2.5 2.5 0 0 1 0-5Zm14 0a2.5 2.5 0 1 1 0 5 2.5 2.5 0 0 1 0-5ZM8 21v-1.5A3.5 3.5 0 0 1 11.5 16h1a3.5 3.5 0 0 1 3.5 3.5V21M1.5 21v-1a3 3 0 0 1 3-3h1M22.5 21v-1a3 3 0 0 0-3-3h-1"/>',admin:'<path d="M12 3 5 6v5c0 5 3 8 7 10 4-2 7-5 7-10V6zM9 12l2 2 4-5"/>'};return `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">${icons[name]}</svg>`}
 function crest(theme=viewTheme()){
-  const img=theme==='nocturne'?'assets/nocturne-collective-logo.webp':'assets/sovereign-circle-logo.webp';
+  const img=theme==='nocturne'?'nocturne-collective-logo.webp':'sovereign-circle-logo.webp';
   return `<div class="crest crest-${theme}"><img src="${img}" alt="" /></div>`;
 }
 function adminSwitcher(){
@@ -166,7 +166,7 @@ function rewardRows(){
 
 function dashboardHero(kind,p){
   const noct=kind==='moxie';
-  const logo=noct?'assets/nocturne-collective-logo.webp':'assets/sovereign-circle-logo.webp';
+  const logo=noct?'nocturne-collective-logo.webp':'sovereign-circle-logo.webp';
   const title=noct?'Nocturne Collective':'The Sovereign Circle';
   const sub=noct?'Game Master control over Sovereign progress':'Official game progress';
   return `<section class="hero hero-${noct?'nocturne':'sovereign'}"><div class="hero-brand"><img src="${logo}" alt="${title} logo"><div><span>${noct?'GAME MASTER':'PLAYER DASHBOARD'}</span><h2>${title}</h2><p>${sub}</p></div></div><div class="hero-scoreline"><div><div class="score-big">${p.within}<span class="pts">PTS</span></div><div class="lifetime-inline">${p.t} lifetime points</div></div><div class="next-orb"><strong>${p.left}</strong><span>TO ${esc(p.tier.toUpperCase())}</span></div></div><div class="bar-wrap"><div class="bar-label"><span>${p.floor}</span><span>${p.next} · ${esc(p.tier.toUpperCase())}</span></div><div class="bar"><i style="width:${p.pct}%"></i></div></div></section>`;
@@ -184,7 +184,7 @@ function home(){
 }
 function adminHome(p,available,led){
   return `<main class="page"><section class="admin-command"><div><span class="eyebrow">Site Administration</span><h2>BabyBat Control Room</h2><p>One login. Both experiences. Live data stays shared.</p></div><div class="admin-crown">♛</div></section>
-  <section class="section"><div class="section-head"><h2>Experience Preview</h2><span>tap to inspect</span></div><div class="preview-grid"><button class="preview-card sovereign" onclick="setAdminView('shawn')"><img src="assets/sovereign-circle-logo.webp"><div><b>Shawn View</b><span>Player dashboard</span></div></button><button class="preview-card nocturne" onclick="setAdminView('moxie')"><img src="assets/nocturne-collective-logo.webp"><div><b>Moxie View</b><span>Game Master dashboard</span></div></button></div></section>
+  <section class="section"><div class="section-head"><h2>Experience Preview</h2><span>tap to inspect</span></div><div class="preview-grid"><button class="preview-card sovereign" onclick="setAdminView('shawn')"><img src="sovereign-circle-logo.webp"><div><b>Shawn View</b><span>Player dashboard</span></div></button><button class="preview-card nocturne" onclick="setAdminView('moxie')"><img src="nocturne-collective-logo.webp"><div><b>Moxie View</b><span>Game Master dashboard</span></div></button></div></section>
   <section class="section"><div class="section-head"><h2>Live Game</h2><span>${p.t} lifetime points</span></div><div class="card admin-score"><div><strong>${p.left}</strong><span>points to ${esc(p.tier)}</span></div><div><strong>${available.length}</strong><span>rewards ready</span></div><div><strong>${led.length}</strong><span>scored directives</span></div></div></section>
   <section class="section"><div class="section-head"><h2>Quick Control</h2><span>real actions</span></div><div class="quick-actions"><button class="action-tile" onclick="go('admin')"><b>Game Master Tools</b><span>Award points / redeem</span></button><button class="action-tile" onclick="go('org')"><b>Organizations</b><span>Review both rosters</span></button></div></section></main>`;
 }
@@ -337,7 +337,7 @@ window.setAdminView=v=>{if(!isAdminAccount())return;ui.adminView=v;ui.activePage
 window.previewOnly=()=>toast('Preview mode is read-only. Switch back to Admin for live actions.')
 window.openOrganization=slug=>{ui.orgSlug=slug;ui.activePage='org';saveUI();render();window.scrollTo({top:0,behavior:'smooth'})}
 window.setOrganization=slug=>{ui.orgSlug=slug;saveUI();render()}
-window.openMember=id=>{const m=memberRows().find(x=>String(x.id)===String(id));if(!m)return;document.body.insertAdjacentHTML('beforeend',`<div class="modal-back" id="memberModal" onclick="if(event.target.id==='memberModal')closeMember()"><div class="modal member-modal">${m.image_path?`<img src="${esc(m.image_path)}" alt="${esc(m.name)}">`:`<div class="member-placeholder large">${esc(m.name.slice(0,1))}</div>`}<div class="member-modal-copy"><div class="eyebrow">${esc(m.role_name||'Member')}</div><h3>${esc(m.name)}</h3><strong>${esc(m.position_title)}</strong>${m.department?`<p>${esc(m.department)}</p>`:''}<button class="secondary" onclick="closeMember()">Close</button></div></div></div>`)}
+window.openMember=id=>{const m=memberRows().find(x=>String(x.id)===String(id));if(!m)return;document.body.insertAdjacentHTML('beforeend',`<div class="modal-back" id="memberModal" onclick="if(event.target.id==='memberModal')closeMember()"><div class="modal member-modal">${m.image_path?`<img src="${esc(assetUrl(m.image_path))}" alt="${esc(m.name)}">`:`<div class="member-placeholder large">${esc(m.name.slice(0,1))}</div>`}<div class="member-modal-copy"><div class="eyebrow">${esc(m.role_name||'Member')}</div><h3>${esc(m.name)}</h3><strong>${esc(m.position_title)}</strong>${m.department?`<p>${esc(m.department)}</p>`:''}<button class="secondary" onclick="closeMember()">Close</button></div></div></div>`)}
 window.closeMember=()=>document.getElementById('memberModal')?.remove()
 window.categoryChanged=()=>{const sel=document.getElementById('aCategory');const opt=sel?.selectedOptions?.[0];const pts=opt?.dataset?.points;if(pts!==undefined)document.getElementById('aPoints').value=pts}
 window.syncNow=async()=>{if(ui.demo)return;await loadRemote();toast('Game state synced')}

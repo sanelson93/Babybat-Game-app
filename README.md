@@ -31,12 +31,12 @@ Replace the existing deployed project contents with this v2.1 folder and redeplo
 If the PWA looks stale after deployment, fully close/reopen it or remove/re-add it to the Home Screen. v2.1 uses a new service-worker cache name (`babybat-v21`) to force an update.
 
 ## Assets
-Character images live under `assets/`. The database stores their relative paths so organization metadata remains centralized while artwork ships with the app.
+Character images live under ``. The database stores their relative paths so organization metadata remains centralized while artwork ships with the app.
 
 `Silk` is represented in the Sovereign roster but no Silk artwork was present in the supplied image set, so the app intentionally shows a styled placeholder until that image is added.
 
 
-## v2.1.1 image fix
+## v2.1.2 image fix
 - Character/logo asset URLs are deployment-relative rather than root-absolute.
 - PWA cache key bumped and all shipped images are precached.
-- Live Supabase image paths should use `assets/...` (the client also normalizes legacy `/assets/...` paths).
+- Live Supabase image paths should use `...` (the client also normalizes legacy `/...` paths).
