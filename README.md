@@ -1,51 +1,49 @@
-# BabyBat Game Hub — v2.2
+# BabyBat Game Hub — v2.3
 
 Mobile-first PWA for the Sovereign Circle / Nocturne Collective game.
 
-## v2.1 changes
-- Removed the non-AI chat/Counsel feature completely from the UI and database.
-- Added Site Admin mode with three render modes: Admin, View as Shawn, View as Moxie.
-- Admin preview modes are read-only so layout QA cannot accidentally change live points/rewards.
-- Added a dedicated Organizations tab with an organization dropdown.
-- Added database-backed organization rosters with name, role, department, position, image, and sort order.
-- Added Sovereign Circle and Nocturne Collective logos and supplied character artwork as optimized WebP assets.
-- Added expanded Nocturne roster and reserved Infernal Firm for future growth.
-- Kept the immutable point ledger, automatic reward unlocks, shared reward redemption, and Realtime sync.
+## v2.3 — Simplified Moxie / Game Master workflow
+- Removed the manual point-award form and scoring-category dropdown completely.
+- The only live point-entry workflow is **Paste Ledger → Preview → Import**.
+- Moxie's fifth navigation tab is now **Score** instead of **Admin**.
+- Moxie's Home dashboard has one clear scoring action: **Score a Directive / Paste Ledger**.
+- Added a compact three-step scoring guide on the Score screen.
+- Restyled Moxie's scoring workflow with Nocturne purple accents so it reads as her workspace, not the Site Admin console.
+- Kept **Review Ledger** as a secondary action instead of competing with scoring entry.
+- Simplified account controls and labels.
+- Site Admin still retains Admin / Shawn / Moxie preview switching and can use the same paste-ledger importer for live scoring.
+- No database migration is required for v2.3; it uses the existing protected ledger tables and permissions.
+
+## Bulk Ledger workflow
+Paste a normal scoring notice, for example:
+
+```text
+SD-003
+Directive Completed +10
+Above & Beyond +5
+Moxie Melt +3
+Reason: Submission accepted
+```
+
+Then:
+1. Tap **Preview Ledger**.
+2. Review rows, duplicates, warnings, and net points.
+3. Tap **Import**.
+
+The importer also accepts CSV, tab-separated spreadsheet rows, and pipe-delimited rows. Existing matching transactions are flagged as duplicates instead of being silently imported twice.
 
 ## Live backend
-This build points ONLY to the dedicated Supabase project `babybat-game-hub` (`mbxevizxcwmmldjtbksq`). It does not reference or share tables with `bsb-archives`.
+This build points only to the dedicated Supabase project `babybat-game-hub` (`mbxevizxcwmmldjtbksq`). It does not reference or share tables with `bsb-archives`.
 
-The v2.1 database migration is already applied. Do not rerun schema SQL in another project.
-
-## Site Admin upgrade
-An existing Shawn/Player login can be promoted with a one-time Site Admin access code. The code is delivered separately and is intentionally not stored in this project archive.
-
-After promotion, a View As control appears at the top of the app:
-- **Admin** — full live management access.
-- **Shawn** — read-only rendering of the Player experience.
-- **Moxie** — read-only rendering of the Game Master experience.
+## Existing v2.x features retained
+- Site Admin with read-only **View as Shawn / View as Moxie** QA modes.
+- Organizations dropdown with Sovereign Circle, Nocturne Collective, and reserved Infernal Firm.
+- Database-backed rosters, logos, character art, roles, departments, positions, and display order.
+- Immutable point ledger and duplicate-aware bulk scoring.
+- Automatic reward unlocks at 200-point milestones.
+- Shared reward redemption and permanent redemption history.
+- Realtime score/reward/directive synchronization.
+- Root-level image assets for simple Vercel file uploads.
 
 ## Deployment
-Replace the existing deployed project contents with this v2.1 folder and redeploy. Keep the same `config.js`; it is already pinned to the BabyBat Supabase project using the browser-safe publishable key.
-
-If the PWA looks stale after deployment, fully close/reopen it or remove/re-add it to the Home Screen. v2.1 uses a new service-worker cache name (`babybat-v21`) to force an update.
-
-## Assets
-Character images live under ``. The database stores their relative paths so organization metadata remains centralized while artwork ships with the app.
-
-`Silk` is represented in the Sovereign roster but no Silk artwork was present in the supplied image set, so the app intentionally shows a styled placeholder until that image is added.
-
-
-## v2.1.2 image fix
-- Character/logo asset URLs are deployment-relative rather than root-absolute.
-- PWA cache key bumped and all shipped images are precached.
-- Live Supabase image paths should use `...` (the client also normalizes legacy `/...` paths).
-
-
-## v2.2 — Bulk Ledger Paste
-- Admin and Game Master can paste whole scoring notices or spreadsheet/CSV/TSV/pipe-delimited ledger rows.
-- Parser recognizes directive headers such as `SD-003` and scoring rows such as `Directive Completed +10`.
-- Preview shows row count, duplicates, validation issues, and net point change before posting.
-- Existing directive/category/point combinations are flagged as duplicates and excluded by default.
-- Missing directives are created automatically at import time.
-- Import posts all accepted scoring rows to the existing immutable point ledger; rewards continue to unlock from the same database trigger.
+Replace the deployed project contents with this v2.3 folder and redeploy. The service-worker cache key is bumped to `babybat-v23-simplified-gm`, so installed PWA copies should refresh to the new interface after reopening.

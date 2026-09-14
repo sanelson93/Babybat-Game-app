@@ -138,7 +138,10 @@ function header(){
   const live=ui.demo?'Demo':'Live';
   return `<header class="topbar theme-${viewTheme()}"><div class="brand">${crest()}<div><div class="eyebrow">BabyBat Game Hub · ${live}</div><h1>${consoleName}</h1></div></div><div class="role-pill">${esc(personLabel())} · ${roleLabel()}</div></header>${adminSwitcher()}${previewReadOnly()?`<div class="preview-banner">ADMIN PREVIEW · Actions are disabled while viewing as ${ui.adminView==='moxie'?'Moxie':'Shawn'}.</div>`:''}`;
 }
-function nav(){return `<nav class="nav">${[['home','Home'],['book','Rules'],['ledger','Ledger'],['org','Organizations'],['admin','Admin']].map(([p,l])=>`<button class="${ui.activePage===p?'active':''}" onclick="go('${p}')">${icon(p)}${l}</button>`).join('')}</nav>`}
+function nav(){
+  const lastLabel=effectiveRole()==='game_master'?'Score':'Admin';
+  return `<nav class="nav">${[['home','Home'],['book','Rules'],['ledger','Ledger'],['org','Organizations'],['admin',lastLabel]].map(([p,l])=>`<button class="${ui.activePage===p?'active':''}" onclick="go('${p}')">${icon(p)}${l}</button>`).join('')}</nav>`;
+}
 
 function ledgerItems(){
   if(ui.demo) return DEMO.ledger.map(x=>structuredClone(x));
@@ -180,7 +183,7 @@ function home(){
   const moxie=effectiveRole()==='game_master';
   return `<main class="page">${dashboardHero(moxie?'moxie':'shawn',p)}
   <section class="section"><div class="grid2"><div class="mini"><strong>${led.length}</strong><span>Scored directives</span></div><div class="mini"><strong>${available.length}</strong><span>Rewards ready</span></div></div></section>
-  ${moxie?`<section class="section"><div class="section-head"><h2>Game Master Actions</h2><span>Nocturne control</span></div><div class="quick-actions"><button class="action-tile" onclick="go('admin')"><b>+ Award Points</b><span>Score a directive</span></button><button class="action-tile" onclick="go('ledger')"><b>Review Ledger</b><span>Audit every point</span></button></div></section>`:''}
+  ${moxie?`<section class="section"><div class="section-head"><h2>Game Master</h2><span>simple workflow</span></div><div class="gm-next-step"><div><span class="eyebrow">NEXT ACTION</span><h3>Score a Directive</h3><p>Paste Moxie's completed scoring ledger, preview it, then import it.</p></div><button class="primary" onclick="go('admin')">Paste Ledger</button></div><button class="ledger-link" onclick="go('ledger')"><span>Review scoring history</span><b>View Ledger ›</b></button></section>`:''}
   <section class="section"><div class="section-head"><h2>Reward Chest</h2><span>${available.length} available</span></div>${rewardChest(available,p,moxie)}</section>
   <section class="section"><div class="section-head"><h2>Organizations</h2><span>Meet the boards</span></div>${organizationTeasers()}</section>
   <section class="section"><div class="section-head"><h2>Recent Activity</h2><span>Permanent ledger</span></div>${led.slice().reverse().slice(0,4).map(activity).join('')}</section></main>`;
@@ -189,7 +192,7 @@ function adminHome(p,available,led){
   return `<main class="page"><section class="admin-command"><div><span class="eyebrow">Site Administration</span><h2>BabyBat Control Room</h2><p>One login. Both experiences. Live data stays shared.</p></div><div class="admin-crown">♛</div></section>
   <section class="section"><div class="section-head"><h2>Experience Preview</h2><span>tap to inspect</span></div><div class="preview-grid"><button class="preview-card sovereign" onclick="setAdminView('shawn')"><img src="sovereign-circle-logo.webp"><div><b>Shawn View</b><span>Player dashboard</span></div></button><button class="preview-card nocturne" onclick="setAdminView('moxie')"><img src="nocturne-collective-logo.webp"><div><b>Moxie View</b><span>Game Master dashboard</span></div></button></div></section>
   <section class="section"><div class="section-head"><h2>Live Game</h2><span>${p.t} lifetime points</span></div><div class="card admin-score"><div><strong>${p.left}</strong><span>points to ${esc(p.tier)}</span></div><div><strong>${available.length}</strong><span>rewards ready</span></div><div><strong>${led.length}</strong><span>scored directives</span></div></div></section>
-  <section class="section"><div class="section-head"><h2>Quick Control</h2><span>real actions</span></div><div class="quick-actions"><button class="action-tile" onclick="go('admin')"><b>Game Master Tools</b><span>Award points / redeem</span></button><button class="action-tile" onclick="go('org')"><b>Organizations</b><span>Review both rosters</span></button></div></section></main>`;
+  <section class="section"><div class="section-head"><h2>Quick Control</h2><span>site owner</span></div><div class="quick-actions"><button class="action-tile" onclick="go('admin')"><b>Scoring & Rewards</b><span>Paste ledger / manage rewards</span></button><button class="action-tile" onclick="go('org')"><b>Organizations</b><span>Review both rosters</span></button></div></section></main>`;
 }
 function rewardChest(av,p,moxie=false){if(!av.length)return `<div class="empty">No unlocked rewards in the chest yet.<br><br><strong style="color:#d8dce2">Next:</strong> ${esc(p.tier)} at ${p.next} points.</div>`;return av.map(r=>`<div class="card reward-card"><div class="reward-icon">${r.tier==='Sovereign'?'♛':'◆'}</div><div class="reward-main"><h3>${esc(r.tier)} Reward</h3><p>Unlocked at ${r.milestone} · ${esc(r.game)}</p></div><span class="badge available">Available</span>${canRedeemView()?`<button class="use-btn" ${previewReadOnly()?'disabled':''} onclick="${previewReadOnly()?'previewOnly()':`askRedeem('${r.id}')`}">${moxie?"USE SHAWN'S":'USE'}</button>`:''}</div>`).join('')}
 function organizationTeasers(){
@@ -238,16 +241,16 @@ function redeemedArchive(rr=rewardRows()){const xs=rr.filter(r=>r.status==='used
 function admin(){
   const r=effectiveRole(), rr=rewardRows(), gm=['game_master','admin'].includes(r);
   const playerUpgrade=accountRole()==='player' && !ui.demo;
-  return `<main class="page"><section class="section" style="margin-top:4px"><div class="section-head"><h2>${r==='admin'?'Site Administration':gm?'Game Master':'Administration'}</h2><span>${r==='admin'?'full access':gm?'Nocturne permissions':'Sovereign access'}</span></div>${gm?awardForm()+bulkLedgerForm():`<div class="card"><h3 style="margin-top:0">Permission Model</h3><p class="small-note">Your current game role is <strong>${roleLabel()}</strong>. Players can view the ledger and use unlocked rewards. Game Master/Admin roles can post score transactions.</p></div>`}${playerUpgrade?adminUpgradeCard():''}</section>
-  <section class="section"><div class="section-head"><h2>Reward Control</h2><span>shared object</span></div>${adminRewards(rr)}</section>
+  const isMoxie=r==='game_master';
+  const heading=r==='admin'?'Site Administration':isMoxie?'Score a Directive':'Administration';
+  const sub=r==='admin'?'full access':isMoxie?'paste → preview → import':'Sovereign access';
+  const scoringIntro=gm?`<div class="gm-workflow ${isMoxie?'nocturne':''}"><div class="workflow-step active"><b>1</b><span>Paste ledger</span></div><i>›</i><div class="workflow-step"><b>2</b><span>Preview</span></div><i>›</i><div class="workflow-step"><b>3</b><span>Import</span></div></div>`:'';
+  return `<main class="page"><section class="section" style="margin-top:4px"><div class="section-head"><h2>${heading}</h2><span>${sub}</span></div>${scoringIntro}${gm?bulkLedgerForm():`<div class="card"><h3 style="margin-top:0">Permission Model</h3><p class="small-note">Your current game role is <strong>${roleLabel()}</strong>. Players can view the ledger and use unlocked rewards. Game Master/Admin roles can import official scoring ledgers.</p></div>`}${playerUpgrade?adminUpgradeCard():''}</section>
+  <section class="section"><div class="section-head"><h2>${isMoxie?'Reward Chest':'Reward Control'}</h2><span>${isMoxie?'shared with Shawn':'shared object'}</span></div>${adminRewards(rr)}</section>
   ${r==='admin'?`<section class="section"><div class="section-head"><h2>Admin Preview</h2><span>cosmetic QA</span></div><div class="card"><p class="small-note">Use the View As switch above to inspect the exact Shawn and Moxie layouts. Preview actions are intentionally disabled so QA cannot accidentally alter live points or rewards.</p></div></section>`:''}
-  ${ui.demo?`<section class="section"><div class="card"><button class="secondary" onclick="toggleDemoViewer()">Preview ${ui.demoViewer==='moxie'?'Shawn / Player':'Moxie / Game Master'}</button><button class="danger" style="margin-left:8px" onclick="leaveDemo()">Exit Demo</button></div></section>`:`<section class="section"><div class="section-head"><h2>Account</h2><span>Supabase Auth</span></div><div class="card"><p class="small-note">${esc(session?.user?.email||'')}<br>Account role: ${roleLabel(accountRole())} · Live sync enabled</p><div class="row"><button class="secondary" onclick="syncNow()">Sync Now</button><button class="danger" onclick="signOut()">Sign Out</button></div></div></section>`}</main>`;
+  ${ui.demo?`<section class="section"><div class="card"><button class="secondary" onclick="toggleDemoViewer()">Preview ${ui.demoViewer==='moxie'?'Shawn / Player':'Moxie / Game Master'}</button><button class="danger" style="margin-left:8px" onclick="leaveDemo()">Exit Demo</button></div></section>`:`<section class="section account-section"><div class="section-head"><h2>Account</h2><span>live sync</span></div><div class="card account-card"><p class="small-note">${esc(session?.user?.email||'')}<br>${roleLabel(accountRole())} · Supabase connected</p><div class="row"><button class="secondary" onclick="syncNow()">Sync</button><button class="danger" onclick="signOut()">Sign Out</button></div></div></section>`}</main>`;
 }
 function adminUpgradeCard(){return `<div class="card admin-upgrade"><div class="eyebrow">Site Owner</div><h3>Unlock Site Admin</h3><p class="small-note">Use the one-time admin upgrade code to turn this account into the site owner. That enables Admin / Shawn / Moxie view switching.</p><div class="field"><label>Admin Upgrade Code</label><input id="adminUpgradeCode" class="input" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="ADM-…"></div><button id="adminUpgradeButton" class="primary" onclick="claimAdminUpgrade()">Activate Site Admin</button></div>`}
-function awardForm(){
-  const options=scoreRows().filter(s=>Number(s.points)!==0).map(s=>`<option value="${esc(s.label)}" data-points="${Number(s.points)}">${esc(s.label)} (${Number(s.points)>0?'+':''}${Number(s.points)})</option>`).join('');
-  return `<div class="card"><h3 style="margin-top:0">Award Points to Sovereign Circle</h3>${previewReadOnly()?`<div class="notice">Preview only — this is exactly where Moxie sees scoring controls, but posting is disabled.</div>`:''}<div class="form-grid"><div class="row"><div class="field"><label>Directive</label><input id="aDirective" class="input" value="SD-003" ${previewReadOnly()?'disabled':''}></div><div class="field"><label>Points</label><input id="aPoints" class="input" type="number" min="-100" max="500" value="10" ${previewReadOnly()?'disabled':''}></div></div><div class="field"><label>Scoring Category</label><select id="aCategory" class="input" onchange="categoryChanged()" ${previewReadOnly()?'disabled':''}><option value="Manual Award">Manual Award</option>${options}</select></div><div class="field"><label>Reason</label><input id="aReason" class="input" placeholder="Directive completed…" ${previewReadOnly()?'disabled':''}></div><button id="awardButton" class="primary" ${previewReadOnly()?'disabled':''} onclick="${previewReadOnly()?'previewOnly()':'awardPoints()'}">Post to Ledger</button></div></div>`;
-}
 function bulkLedgerForm(){
   const rows=bulkLedgerRows||[];
   const importable=rows.filter(r=>r.valid&&!r.duplicate);
@@ -261,7 +264,7 @@ function bulkLedgerForm(){
     ${bulkLedgerIgnored.length?`<details class="bulk-ignored"><summary>${bulkLedgerIgnored.length} ignored line${bulkLedgerIgnored.length===1?'':'s'}</summary><div>${bulkLedgerIgnored.map(x=>`<code>${esc(x)}</code>`).join('')}</div></details>`:''}
     <div class="row"><button class="secondary" onclick="clearBulkLedger()">Clear</button><button id="bulkImportButton" class="primary" ${previewReadOnly()||!importable.length?'disabled':''} onclick="${previewReadOnly()?'previewOnly()':'importBulkLedger()'}">Import ${importable.length} Row${importable.length===1?'':'s'}</button></div>
   </div>`:'';
-  return `<div class="card bulk-ledger-card"><div class="bulk-title"><div><div class="eyebrow">Fast Entry</div><h3>Paste Ledger</h3></div><span class="badge">BULK</span></div><p class="small-note">Paste a scoring notice, spreadsheet rows, tab-separated data, CSV, or pipe-delimited text. Nothing posts until you preview and confirm.</p>${previewReadOnly()?`<div class="notice">Preview only — Moxie sees this importer, but Admin QA cannot post from preview mode.</div>`:''}<div class="field"><label>Ledger Text</label><textarea id="bulkLedgerText" class="input bulk-textarea" ${previewReadOnly()?'disabled':''} placeholder="SD-003\nDirective Completed +10\nAbove & Beyond +5\nMoxie Melt +3\nReason: Submission accepted"></textarea></div><div class="bulk-help"><span>Also accepts:</span><code>SD-003 | Category | +10 | Reason</code></div><button class="secondary bulk-parse" ${previewReadOnly()?'disabled':''} onclick="${previewReadOnly()?'previewOnly()':'previewBulkLedger()'}">Preview Paste</button>${preview}</div>`;
+  return `<div class="card bulk-ledger-card ${effectiveRole()==='game_master'?'nocturne':''}"><div class="bulk-title"><div><div class="eyebrow">Official Scoring</div><h3>Paste Ledger</h3></div><span class="badge">BULK</span></div><p class="small-note">Paste the completed scoring ledger. The app checks it first; nothing changes until you preview and import.</p>${previewReadOnly()?`<div class="notice">Preview only — Moxie sees this importer, but Admin QA cannot post from preview mode.</div>`:''}<div class="field"><label>Ledger Text</label><textarea id="bulkLedgerText" class="input bulk-textarea" ${previewReadOnly()?'disabled':''} placeholder="SD-003\nDirective Completed +10\nAbove & Beyond +5\nMoxie Melt +3\nReason: Submission accepted"></textarea></div><div class="bulk-help"><span>Quick format:</span><code>SD-003 · Category +10</code><span>or paste spreadsheet/CSV rows</span></div><button class="secondary bulk-parse" ${previewReadOnly()?'disabled':''} onclick="${previewReadOnly()?'previewOnly()':'previewBulkLedger()'}">Preview Ledger</button>${preview}</div>`;
 }
 function bulkPreviewRow(r,i){
   const state=!r.valid?'invalid':r.duplicate?'duplicate':r.ruleMismatch?'warning':'ready';
@@ -473,7 +476,6 @@ window.openOrganization=slug=>{ui.orgSlug=slug;ui.activePage='org';saveUI();rend
 window.setOrganization=slug=>{ui.orgSlug=slug;saveUI();render()}
 window.openMember=id=>{const m=memberRows().find(x=>String(x.id)===String(id));if(!m)return;document.body.insertAdjacentHTML('beforeend',`<div class="modal-back" id="memberModal" onclick="if(event.target.id==='memberModal')closeMember()"><div class="modal member-modal">${m.image_path?`<img src="${esc(assetUrl(m.image_path))}" alt="${esc(m.name)}">`:`<div class="member-placeholder large">${esc(m.name.slice(0,1))}</div>`}<div class="member-modal-copy"><div class="eyebrow">${esc(m.role_name||'Member')}</div><h3>${esc(m.name)}</h3><strong>${esc(m.position_title)}</strong>${m.department?`<p>${esc(m.department)}</p>`:''}<button class="secondary" onclick="closeMember()">Close</button></div></div></div>`)}
 window.closeMember=()=>document.getElementById('memberModal')?.remove()
-window.categoryChanged=()=>{const sel=document.getElementById('aCategory');const opt=sel?.selectedOptions?.[0];const pts=opt?.dataset?.points;if(pts!==undefined)document.getElementById('aPoints').value=pts}
 window.syncNow=async()=>{if(ui.demo)return;await loadRemote();toast('Game state synced')}
 window.claimAccess=async()=>{
   const code=document.getElementById('accessCode')?.value.trim();
@@ -560,28 +562,6 @@ window.importBulkLedger=async()=>{
     const net=rows.reduce((a,r)=>a+Number(r.points),0); bulkLedgerRows=[];bulkLedgerIgnored=[];
     await loadRemote();toast(`${rows.length} rows imported · ${net>0?'+':''}${net} net points`);
   }catch(e){toast(e?.message||String(e));if(btn){btn.disabled=false;btn.textContent='Import Rows'}}
-}
-window.awardPoints=async()=>{
-  if(ui.demo){toast('Demo award controls do not alter the live database');return}
-  if(previewReadOnly()){previewOnly();return}
-  if(!['game_master','admin'].includes(accountRole())){toast('Game Master permission required');return}
-  const code=document.getElementById('aDirective')?.value.trim()||'Manual';
-  const pts=Number(document.getElementById('aPoints')?.value);
-  const category=document.getElementById('aCategory')?.value||'Manual Award';
-  const reason=document.getElementById('aReason')?.value.trim()||'Points awarded by Game Master.';
-  if(!Number.isFinite(pts)||pts===0){toast('Enter a non-zero point amount');return}
-  const btn=document.getElementById('awardButton');if(btn){btn.disabled=true;btn.textContent='Posting…'}
-  try{
-    let d=directives.find(x=>x.code.toLowerCase()===code.toLowerCase());
-    if(!d){
-      const now=new Date().toISOString();
-      const ins=await db.from('directives').insert({game_id:game.id,code,title:code,status:'scored',issued_by_user_id:session.user.id,issued_at:now,completed_at:now}).select().single();
-      if(ins.error) throw ins.error; d=ins.data;
-    }
-    const tx=await db.from('point_transactions').insert({game_id:game.id,directive_id:d.id,points:pts,category,reason,source:'game_master',awarded_by_user_id:session.user.id});
-    if(tx.error) throw tx.error;
-    await loadRemote();toast(`${pts>0?'+':''}${pts} points posted to the permanent ledger`);
-  }catch(e){toast(e?.message||String(e));if(btn){btn.disabled=false;btn.textContent='Post to Ledger'}}
 }
 function toast(msg){document.querySelector('.toast')?.remove();const el=document.createElement('div');el.className='toast';el.textContent=msg;document.body.appendChild(el);setTimeout(()=>el.remove(),2400)}
 
