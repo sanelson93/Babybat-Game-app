@@ -3,5 +3,6 @@
 window.BABYBAT_CONFIG = Object.freeze({
   supabaseUrl: 'https://mbxevizxcwmmldjtbksq.supabase.co',
   supabasePublishableKey: 'sb_publishable_MO8KdEVgSzvR2K_aXyf9Ig_3k4CWaiA',
-  gameSlug: 'sovereign-circle-game'
+  gameSlug: 'sovereign-circle-game',
+  siteUrl: 'https://game-app.vercel.app/'
 });

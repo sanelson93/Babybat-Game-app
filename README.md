@@ -1,3 +1,15 @@
+# BabyBat Game Hub v2.4.1
+
+Auth confirmation hotfix.
+
+## Required Supabase Auth setting
+Set **Authentication → URL Configuration** to:
+
+- Site URL: `https://game-app.vercel.app/`
+- Redirect URL: `https://game-app.vercel.app/**`
+
+The app now always requests the production URL above for signup confirmation and surfaces Supabase callback errors instead of failing silently.
+
 # BabyBat Game Hub — v2.4
 
 Mobile-first PWA for the Sovereign Circle / Nocturne Collective game.

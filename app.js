@@ -5,6 +5,23 @@ const db = createClient(CONFIG.supabaseUrl, CONFIG.supabasePublishableKey, {
   auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: true }
 });
 
+function authRedirectUrl(){
+  const configured=(CONFIG.siteUrl||'').trim();
+  if(configured) return configured.endsWith('/')?configured:`${configured}/`;
+  if(window.location.protocol==='http:'||window.location.protocol==='https:') return `${window.location.origin}/`;
+  return undefined;
+}
+function authCallbackError(){
+  const raw=(window.location.hash||'').replace(/^#/,'');
+  const hash=new URLSearchParams(raw);
+  const query=new URLSearchParams(window.location.search||'');
+  const code=hash.get('error_code')||query.get('error_code');
+  const desc=hash.get('error_description')||query.get('error_description')||hash.get('error')||query.get('error');
+  if(!code&&!desc) return '';
+  try{ history.replaceState({},document.title,window.location.pathname); }catch{}
+  return `Email confirmation failed${code?` (${code})`:''}: ${desc||'Supabase rejected the confirmation link.'}`;
+}
+
 const DEMO = {
   entities: [
     {slug:'sovereign-circle',name:'Sovereign Circle',entity_type:'circle',logo_path:'sovereign-circle-logo.webp',theme_key:'sovereign',tagline:'Strategy. Loyalty. Control.'},
@@ -429,6 +446,8 @@ function render(){
 }
 
 async function boot(){
+  const callbackFailure=authCallbackError();
+  if(callbackFailure) remoteError=callbackFailure;
   render();
   const {data:{session:s},error}=await db.auth.getSession();
   if(error){remoteError=error.message;remoteStatus='error';render();return}
@@ -528,12 +547,12 @@ window.signUp=async()=>{
   const password=document.getElementById('authPassword')?.value||'';
   if(!email||password.length<8){remoteError='Enter a valid email and a password with at least 8 characters.';render();return}
   remoteStatus='loading';render();
-  const redirectOrigin=(window.location.protocol==='http:'||window.location.protocol==='https:')?window.location.origin:undefined;
+  const redirectOrigin=authRedirectUrl();
   const signUpOptions={data:{display_name:name},...(redirectOrigin?{emailRedirectTo:redirectOrigin}:{})};
   const {data,error}=await db.auth.signUp({email,password,options:signUpOptions});
   if(error){remoteError=error.message;session=null;remoteStatus='ready';render();return}
   session=data.session;
-  if(session){await loadRemote()}else{remoteStatus='ready';session=null;remoteError='Account created. Check your email for the confirmation link, then come back and sign in.';render()}
+  if(session){await loadRemote()}else{remoteStatus='ready';session=null;remoteError=`Account created. Open the confirmation email; it should return you to ${authRedirectUrl()||'this app'}. Then sign in.`;render()}
 }
 window.signIn=async()=>{
   const email=document.getElementById('authEmail')?.value.trim();const password=document.getElementById('authPassword')?.value||'';
