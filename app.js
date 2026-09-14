@@ -1,3 +1,4 @@
+const APP_VERSION = '2.4.3';
 const UI_STORAGE = 'babybat-game-hub-ui-v24';
 const CONFIG = window.BABYBAT_CONFIG;
 const { createClient } = window.supabase;
@@ -138,6 +139,7 @@ function roleLabel(r=effectiveRole()){ return ({player:'Player',game_master:'Gam
 function personLabel(){
   if(ui.demo) return ui.demoViewer==='moxie'?'Moxie':'Shawn';
   if(isAdminAccount() && ui.siteMode==='admin' && ui.adminPreview==='moxie') return 'Moxie Preview';
+  if(accountRole()==='game_master') return 'Moxie';
   return profile?.display_name || session?.user?.email?.split('@')[0] || 'Shawn';
 }
 function viewTheme(){ return effectiveRole()==='game_master'?'nocturne':'sovereign'; }
@@ -160,7 +162,7 @@ function header(){
 }
 function nav(){
   const lastLabel=effectiveRole()==='game_master'?'Score':(isAdminAccount()&&ui.siteMode==='player'?'Profile':'Admin');
-  return `<nav class="nav">${[['home','Home'],['book','Rules'],['ledger','Ledger'],['org','Organizations'],['admin',lastLabel]].map(([p,l])=>`<button class="${ui.activePage===p?'active':''}" onclick="go('${p}')">${icon(p)}${l}</button>`).join('')}</nav>`;
+  return `<nav class="nav"><span class="build-version">BABYBAT v${APP_VERSION}</span>${[['home','Home'],['book','Rules'],['ledger','Ledger'],['org','Organizations'],['admin',lastLabel]].map(([p,l])=>`<button class="${ui.activePage===p?'active':''}" onclick="go('${p}')">${icon(p)}${l}</button>`).join('')}</nav>`;
 }
 
 function ledgerItems(){
@@ -266,10 +268,11 @@ function admin(){
   if(playerMode){
     return `<main class="page"><section class="section" style="margin-top:4px"><div class="section-head"><h2>Player Profile</h2><span>your normal mode</span></div><div class="card player-profile-card"><div class="eyebrow">Sovereign Circle Player</div><h3>${esc(profile?.display_name||'Shawn')}</h3><p class="small-note">This is your live player account. Use the Player / Admin switch at the very top only when you need to maintain or QA the site.</p></div></section><section class="section account-section"><div class="section-head"><h2>Account</h2><span>live sync</span></div><div class="card account-card"><p class="small-note">${esc(session?.user?.email||'')}<br>Player Mode · Site Admin access available</p><div class="row"><button class="secondary" onclick="syncNow()">Sync</button><button class="danger" onclick="signOut()">Sign Out</button></div></div></section></main>`;
   }
-  const heading=r==='admin'?'Site Administration':isMoxie?'Moxie Preview':'Administration';
-  const sub=r==='admin'?'full access':isMoxie?'Game Master layout · read-only QA':'Sovereign access';
+  const moxiePreview=isMoxie && previewReadOnly();
+  const heading=r==='admin'?'Site Administration':isMoxie?(moxiePreview?'Moxie Preview':'Moxie Scoring Console'):'Administration';
+  const sub=r==='admin'?'full access':isMoxie?(moxiePreview?'Game Master layout · read-only QA':'Nocturne Game Master'):'Sovereign access';
   const scoringIntro=gm?`<div class="gm-workflow ${isMoxie?'nocturne':''}"><div class="workflow-step active"><b>1</b><span>Paste ledger</span></div><i>›</i><div class="workflow-step"><b>2</b><span>Preview</span></div><i>›</i><div class="workflow-step"><b>3</b><span>Import</span></div></div>`:'';
-  return `<main class="page"><section class="section" style="margin-top:4px"><div class="section-head"><h2>${heading}</h2><span>${sub}</span></div>${isMoxie?`<div class="preview-context"><span>Moxie layout preview</span><button onclick="setSiteMode('admin')">Back to Admin Home</button></div>`:''}${scoringIntro}${gm?bulkLedgerForm():`<div class="card"><h3 style="margin-top:0">Permission Model</h3><p class="small-note">Your current game role is <strong>${roleLabel()}</strong>. Players can view the ledger and use unlocked rewards. Game Master/Admin roles can import official scoring ledgers.</p></div>`}${playerUpgrade?adminUpgradeCard():''}</section>
+  return `<main class="page"><section class="section" style="margin-top:4px"><div class="section-head"><h2>${heading}</h2><span>${sub}</span></div>${moxiePreview?`<div class="preview-context"><span>Moxie layout preview</span><button onclick="setSiteMode('admin')">Back to Admin Home</button></div>`:''}${scoringIntro}${gm?bulkLedgerForm():`<div class="card"><h3 style="margin-top:0">Permission Model</h3><p class="small-note">Your current game role is <strong>${roleLabel()}</strong>. Players can view the ledger and use unlocked rewards. Game Master/Admin roles can import official scoring ledgers.</p></div>`}${playerUpgrade?adminUpgradeCard():''}</section>
   <section class="section"><div class="section-head"><h2>${isMoxie?'Reward Chest':'Reward Control'}</h2><span>${isMoxie?'shared with Shawn':'shared object'}</span></div>${adminRewards(rr)}</section>
   ${r==='admin'?`<section class="section"><div class="section-head"><h2>Experience QA</h2><span>admin tools</span></div><div class="card"><p class="small-note">Player Mode is your real Shawn profile. Use Preview Moxie from the Admin Home only when you need to inspect her interface.</p></div></section>`:''}
   ${ui.demo?`<section class="section"><div class="card"><button class="secondary" onclick="toggleDemoViewer()">Preview ${ui.demoViewer==='moxie'?'Shawn / Player':'Moxie / Game Master'}</button><button class="danger" style="margin-left:8px" onclick="leaveDemo()">Exit Demo</button></div></section>`:`<section class="section account-section"><div class="section-head"><h2>Account</h2><span>live sync</span></div><div class="card account-card"><p class="small-note">${esc(session?.user?.email||'')}<br>${roleLabel(accountRole())} · Supabase connected</p><div class="row"><button class="secondary" onclick="syncNow()">Sync</button><button class="danger" onclick="signOut()">Sign Out</button></div></div></section>`}</main>`;
@@ -465,7 +468,7 @@ async function loadRemote(){
   try{
     const [prof,mems] = await Promise.all([
       db.from('profiles').select('id,display_name').eq('id',session.user.id).maybeSingle(),
-      db.from('game_memberships').select('game_id,user_id,entity_id,role')
+      db.from('game_memberships').select('game_id,user_id,entity_id,role').eq('user_id',session.user.id)
     ]);
     if(prof.error) throw prof.error; if(mems.error) throw mems.error;
     profile=prof.data;
@@ -475,8 +478,8 @@ async function loadRemote(){
     if(gres.error) throw gres.error;
     game=gres.data?.find(g=>g.slug===CONFIG.gameSlug)||gres.data?.[0];
     if(!game){remoteStatus='pending';render();return}
-    membership=mems.data.find(m=>m.game_id===game.id);
-    if(membership?.role!=='admin'){ui.siteMode='player';ui.adminPreview='none';}
+    membership=mems.data.find(m=>m.game_id===game.id && m.user_id===session.user.id);
+    if(membership?.role!=='admin'){ui.siteMode='player';ui.adminPreview='none'; if(membership?.role==='game_master') ui.orgSlug='nocturne-collective';}
     else {
       if(!['player','admin'].includes(ui.siteMode)) ui.siteMode='player';
       if(!['none','moxie'].includes(ui.adminPreview)) ui.adminPreview='none';

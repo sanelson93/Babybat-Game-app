@@ -1,4 +1,21 @@
-# BabyBat Game Hub v2.4.1
+# BabyBat Game Hub v2.4.3
+
+## Visible build version
+- Added a small persistent `BABYBAT v2.4.3` label just above the bottom navigation.
+- The label is visible in both Sovereign and Nocturne experiences so screenshots immediately identify the deployed build.
+- Service-worker cache bumped to `babybat-v243-version-stamp`.
+
+# BabyBat Game Hub v2.4.2
+
+## Moxie role-isolation hotfix
+
+- Game memberships are now filtered to the signed-in user before the UI decides what role to render.
+- Moxie / Game Master accounts never receive the Player/Admin mode toggle.
+- Moxie opens directly in the Nocturne purple experience.
+- The real Moxie scoring page is labeled as a live Game Master console, not a preview.
+- Admin-only Moxie preview remains available only from Shawn's Site Admin account.
+- Core app files now use network-first service-worker handling to make future deployments less sticky on iOS.
+
 
 Auth confirmation hotfix.
 
