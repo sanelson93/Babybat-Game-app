@@ -273,12 +273,19 @@ function bulkPreviewRow(r,i){
 }
 function normalizeDirectiveCode(value=''){
   const text=String(value).trim();
-  const m=text.match(/(?:\bSD\b|SOVEREIGN\s+DIRECTIVE)\s*[-#:]?\s*(\d{1,4})/i);
+  // Accept the ways the real scoring notices tend to label a directive:
+  // SD-003, SD #003, Directive #003, Sovereign Directive #003, or a bare #003 heading.
+  const m=text.match(/(?:\bSD\b|\bDIRECTIVE\b|SOVEREIGN\s+DIRECTIVE)\s*[-#:]?\s*(\d{1,4})/i)
+    || text.match(/^\s*#\s*(\d{1,4})(?:\b|\s|[-–—:])/i);
   if(!m) return '';
   return `SD-${String(Number(m[1])).padStart(3,'0')}`;
 }
 function cleanBulkLine(line=''){
-  return String(line).replace(/^\s*[•*▶►▪◦]+\s*/,'').replace(/^\s*[-–—]\s+(?=[A-Za-z])/,'').trim();
+  return String(line)
+    .replace(/^\s*(?:✅|☑️?|✔️?|✓|❌|✖️?|⭐|🔥|🦇|👑)\s*/u,'')
+    .replace(/^\s*[•*▶►▪◦]+\s*/,'')
+    .replace(/^\s*[-–—]\s+(?=[A-Za-z])/,'')
+    .trim();
 }
 function parseCsvLine(line){
   const out=[]; let cur=''; let quoted=false;
@@ -317,14 +324,21 @@ function existingLedgerSignatures(){
   return set;
 }
 function parseBulkLedger(text){
-  const lines=String(text||'').split(/\r?\n/).map(cleanBulkLine).filter(Boolean);
-  const rows=[]; const ignored=[]; let currentDirective=''; let pendingReason='';
+  const rawText=String(text||'');
+  const lines=rawText.split(/\r?\n/).map(cleanBulkLine).filter(Boolean);
+  // First pass: discover directive codes anywhere in the pasted notice. If the whole
+  // paste only references one directive, use it as the default for every scoring row.
+  const discovered=[...new Set(lines.map(normalizeDirectiveCode).filter(Boolean))];
+  const defaultDirective=discovered.length===1?discovered[0]:'';
+  const rows=[]; const ignored=[]; let currentDirective=defaultDirective; let pendingReason='';
   for(const original of lines){
     const line=original.trim();
     const directOnly=normalizeDirectiveCode(line);
-    const isDirectiveHeading=/^(?:SD\s*[-#:]?\s*\d{1,4}|SOVEREIGN\s+DIRECTIVE\s*[-#:]?\s*\d{1,4})(?:\s*(?:ACCEPTED|COMPLETED|SCORED))?$/i.test(line);
-    if(directOnly && isDirectiveHeading){
-      currentDirective=directOnly; continue;
+    const hasPointValue=/[+-]\s*\d+\s*(?:pts?|points?)?\s*$/i.test(line);
+    // Any non-scoring line that identifies a directive can establish context. This
+    // intentionally accepts decorated headings such as "SD-003 — OFFICIAL SCORECARD".
+    if(directOnly && !hasPointValue){
+      currentDirective=directOnly; ignored.push(line); continue;
     }
     if(/^reason\s*:/i.test(line)){
       pendingReason=line.replace(/^reason\s*:/i,'').trim();
@@ -366,6 +380,7 @@ function parseBulkLedger(text){
   }
   const existing=existingLedgerSignatures(); const seen=new Set(); const rules=new Map(scoreRows().map(r=>[String(r.label??r[0]).trim().toLowerCase(),Number(r.points??r[1])]));
   rows.forEach(r=>{
+    if(!r.directive && defaultDirective) r.directive=defaultDirective;
     r.directive=normalizeDirectiveCode(r.directive)||String(r.directive||'').trim().toUpperCase();
     r.category=String(r.category||'').trim();
     r.valid=Boolean(r.directive&&r.category&&Number.isFinite(Number(r.points))&&Number(r.points)!==0);

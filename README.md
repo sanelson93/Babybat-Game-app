@@ -1,8 +1,8 @@
-# BabyBat Game Hub — v2.3
+# BabyBat Game Hub — v2.3.1.1
 
 Mobile-first PWA for the Sovereign Circle / Nocturne Collective game.
 
-## v2.3 — Simplified Moxie / Game Master workflow
+## v2.3.1.1 — Simplified Moxie / Game Master workflow
 - Removed the manual point-award form and scoring-category dropdown completely.
 - The only live point-entry workflow is **Paste Ledger → Preview → Import**.
 - Moxie's fifth navigation tab is now **Score** instead of **Admin**.
@@ -12,7 +12,7 @@ Mobile-first PWA for the Sovereign Circle / Nocturne Collective game.
 - Kept **Review Ledger** as a secondary action instead of competing with scoring entry.
 - Simplified account controls and labels.
 - Site Admin still retains Admin / Shawn / Moxie preview switching and can use the same paste-ledger importer for live scoring.
-- No database migration is required for v2.3; it uses the existing protected ledger tables and permissions.
+- No database migration is required for v2.3.1.1; it uses the existing protected ledger tables and permissions.
 
 ## Bulk Ledger workflow
 Paste a normal scoring notice, for example:
@@ -46,4 +46,11 @@ This build points only to the dedicated Supabase project `babybat-game-hub` (`mb
 - Root-level image assets for simple Vercel file uploads.
 
 ## Deployment
-Replace the deployed project contents with this v2.3 folder and redeploy. The service-worker cache key is bumped to `babybat-v23-simplified-gm`, so installed PWA copies should refresh to the new interface after reopening.
+Replace the deployed project contents with this v2.3.1.1 folder and redeploy. The service-worker cache key is bumped to `babybat-v23-simplified-gm`, so installed PWA copies should refresh to the new interface after reopening.
+
+
+## v2.3.1 ledger parser fix
+- A single directive number found anywhere in a pasted scorecard is inherited by all scoring rows.
+- Accepts SD-003, SD #003, Directive #003, Sovereign Directive #003, and #003 headings.
+- Decorated headings such as `SOVEREIGN DIRECTIVE #003 — OFFICIAL SCORING NOTICE` are supported.
+- Common scorecard emoji markers (✅, ✔, ✓, etc.) are stripped from category names.
