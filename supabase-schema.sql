@@ -1,14 +1,25 @@
--- BabyBat Game Hub backend is already provisioned in the dedicated Supabase project:
+-- BabyBat Game Hub backend is provisioned in the dedicated Supabase project:
 -- project: babybat-game-hub
 -- ref: mbxevizxcwmmldjtbksq
 --
--- v2.1 database migrations are already applied in production, including:
+-- Production migrations now include the v3 game-hub layer:
+--   organization_status
+--   app_settings
+--   mail_messages
+--   evidence_submissions
+--   notification_events
+--   private game-evidence Storage bucket + RLS
+--   BabyBat bridge RPCs: babybat_snapshot(), babybat_send_mail(), babybat_set_status()
+--   Realtime publication for organization status, Mail, evidence, app settings,
+--   directives, point transactions, and rewards.
+--
+-- Earlier core tables remain in production:
 -- profiles, game_entities, games, game_memberships, directives, scoring_rules,
 -- point_transactions, reward_tiers, rewards, rulebook_sections,
--- access_claims, organization_members, RLS policies, reward-unlock triggers,
--- one-time access claims, and Realtime publication.
+-- access_claims, organization_members, one-time access claims, RLS policies,
+-- and automatic reward unlocking.
 --
--- The old chat_threads/chat_messages tables were removed in v2.1.
+-- The old fake/local chat tables remain removed.
 --
--- This file is intentionally documentation-only so a deploy cannot accidentally
--- create duplicate/outdated tables in the wrong Supabase project.
+-- This file is documentation-only so a static Vercel deploy cannot accidentally
+-- create duplicate/outdated schema in the wrong Supabase project.

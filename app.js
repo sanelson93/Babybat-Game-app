@@ -1,5 +1,5 @@
-const APP_VERSION = '2.4.3';
-const UI_STORAGE = 'babybat-game-hub-ui-v24';
+const APP_VERSION = '3.0.0';
+const UI_STORAGE = 'babybat-game-hub-ui-v30';
 const CONFIG = window.BABYBAT_CONFIG;
 const { createClient } = window.supabase;
 const db = createClient(CONFIG.supabaseUrl, CONFIG.supabasePublishableKey, {
@@ -24,6 +24,10 @@ function authCallbackError(){
 }
 
 const DEMO = {
+  statuses: [
+    {entity_slug:'sovereign-circle',status:'open',note:''},
+    {entity_slug:'nocturne-collective',status:'open',note:''}
+  ],
   entities: [
     {slug:'sovereign-circle',name:'Sovereign Circle',entity_type:'circle',logo_path:'sovereign-circle-logo.webp',theme_key:'sovereign',tagline:'Strategy. Loyalty. Control.'},
     {slug:'nocturne-collective',name:'Nocturne Collective',entity_type:'collective',logo_path:'nocturne-collective-logo.webp',theme_key:'nocturne',tagline:"We don't follow the light. We run the night."},
@@ -101,6 +105,7 @@ let remoteError = '';
 let game = null;
 let membership = null;
 let entities = [];
+let organizationStatuses = [];
 let organizationMembers = [];
 let directives = [];
 let pointTransactions = [];
@@ -108,11 +113,73 @@ let rewards = [];
 let tiers = [];
 let scoringRules = [];
 let ruleSections = [];
+let appSettings = [];
+let mailMessages = [];
+let evidenceSubmissions = [];
+let notificationEvents = [];
+let mailMode = 'inbox';
 let realtimeChannel = null;
 let realtimeTimer = null;
 let bulkLedgerRows = [];
 let bulkLedgerIgnored = [];
+let authMode = 'login';
+let authDraft = {name:'',email:''};
+let authNotice = '';
+let authNoticeKind = 'info';
+let authNeedsConfirmation = false;
+let authRecoveryActive = false;
 
+function setAuthNotice(message='',kind='info'){
+  authNotice=message||'';
+  authNoticeKind=kind||'info';
+}
+function captureAuthDraft(){
+  const name=document.getElementById('authName')?.value;
+  const email=document.getElementById('authEmail')?.value;
+  if(name!==undefined) authDraft.name=name.trim();
+  if(email!==undefined) authDraft.email=email.trim();
+}
+function authCallbackType(){
+  const hash=new URLSearchParams((window.location.hash||'').replace(/^#/,''));
+  const query=new URLSearchParams(window.location.search||'');
+  return hash.get('type')||query.get('type')||'';
+}
+function cleanAuthUrl(){
+  try{ history.replaceState({},document.title,window.location.pathname); }catch{}
+}
+function friendlyAuthError(error){
+  const raw=String(error?.message||error||'Authentication failed.');
+  const low=raw.toLowerCase();
+  if(low.includes('invalid login credentials')) return 'That email/password combination does not match. Use Forgot Password if you are not sure which password is current.';
+  if(low.includes('email not confirmed')) return 'That account still needs email confirmation. Confirm the email or resend the confirmation below.';
+  if(low.includes('rate limit')||low.includes('too many')) return 'Too many email/auth attempts were made too quickly. Wait a little bit and try again.';
+  if(low.includes('password should')||low.includes('weak password')) return 'That password is not strong enough. Use at least 8 characters and avoid a compromised/common password.';
+  if(low.includes('same password')) return 'Choose a password different from the current one.';
+  return raw;
+}
+function normalizeAccessCode(value=''){
+  return String(value||'').trim().replace(/[‐‑‒–—]/g,'-').replace(/\s+/g,'');
+}
+function canonicalClaimName(label='',role=''){
+  const text=String(label||'').toLowerCase();
+  if(text.includes('moxie')) return 'Moxie';
+  if(text.includes('shawn')) return 'Shawn';
+  if(role==='game_master') return 'Moxie';
+  return '';
+}
+async function applyCanonicalClaimName(label,role){
+  const name=canonicalClaimName(label,role);
+  if(!name||!session?.user?.id) return;
+  const {error}=await db.from('profiles').update({display_name:name}).eq('id',session.user.id);
+  if(!error) profile={...(profile||{}),id:session.user.id,display_name:name};
+}
+function authNoticeHtml(){
+  if(!authNotice) return '';
+  return `<div class="auth-notice ${esc(authNoticeKind)}">${esc(authNotice)}</div>`;
+}
+function passwordField(id,label,autocomplete='current-password',placeholder='8+ characters'){
+  return `<div class="field"><label>${esc(label)}</label><div class="password-wrap"><input id="${esc(id)}" class="input" type="password" autocomplete="${esc(autocomplete)}" minlength="8" placeholder="${esc(placeholder)}"><button type="button" class="password-toggle" aria-label="Show password" onclick="togglePassword('${esc(id)}',this)">Show</button></div></div>`;
+}
 
 function loadUI(){
   try { return {activePage:'home', demo:false, demoViewer:'shawn', siteMode:'player', adminPreview:'none', orgSlug:'sovereign-circle', ...JSON.parse(localStorage.getItem(UI_STORAGE)||'{}')}; }
@@ -143,8 +210,37 @@ function personLabel(){
   return profile?.display_name || session?.user?.email?.split('@')[0] || 'Shawn';
 }
 function viewTheme(){ return effectiveRole()==='game_master'?'nocturne':'sovereign'; }
+function setting(key,fallback=null){
+  if(ui.demo) return fallback;
+  const row=appSettings.find(x=>x.setting_key===key);
+  return row?row.setting_value:fallback;
+}
+function currentEntity(){
+  if(ui.demo){const slug=ui.demoViewer==='moxie'?'nocturne-collective':'sovereign-circle';return entityRows().find(e=>e.slug===slug);}
+  return entityRows().find(e=>e.id===membership?.entity_id) || null;
+}
+function otherGameEntity(){
+  const mine=currentEntity()?.id;
+  if(!game) return null;
+  const otherId=mine===game.player_entity_id?game.game_master_entity_id:game.player_entity_id;
+  return entityRows().find(e=>e.id===otherId)||null;
+}
+function entityName(id){return entityRows().find(e=>e.id===id)?.name||'Unknown Organization';}
+function entitySlug(id){return entityRows().find(e=>e.id===id)?.slug||'';}
+function mailAddressForEntity(id){
+  const slug=entitySlug(id);
+  if(slug==='nocturne-collective') return setting('nocturne_mail_address','nocturnecollective@nightshift.net');
+  if(slug==='sovereign-circle') return setting('sovereign_mail_address','chambers@sovereigncircle.org');
+  return '';
+}
+function unreadMailCount(){
+  const me=currentEntity()?.id;if(!me)return 0;
+  return mailMessages.filter(m=>m.recipient_entity_id===me&&!m.recipient_read_at&&!m.recipient_archived_at).length;
+}
+function storageBytes(){return evidenceSubmissions.filter(e=>!e.deleted_at).reduce((a,e)=>a+Number(e.byte_size||0),0)}
+function humanBytes(n=0){const x=Number(n)||0;if(x<1024)return `${x} B`;if(x<1048576)return `${(x/1024).toFixed(1)} KB`;if(x<1073741824)return `${(x/1048576).toFixed(1)} MB`;return `${(x/1073741824).toFixed(2)} GB`;}
 
-function icon(name){const icons={home:'<path d="M3 11.5 12 4l9 7.5v8a1 1 0 0 1-1 1h-5v-6H9v6H4a1 1 0 0 1-1-1z"/>',book:'<path d="M4 4.5A2.5 2.5 0 0 1 6.5 2H11v18H6.5A2.5 2.5 0 0 0 4 22zM20 4.5A2.5 2.5 0 0 0 17.5 2H13v18h4.5A2.5 2.5 0 0 1 20 22z"/>',ledger:'<path d="M5 3h14v18H5zM8 7h8M8 11h8M8 15h5"/>',org:'<path d="M12 3a3 3 0 1 1 0 6 3 3 0 0 1 0-6ZM5 11a2.5 2.5 0 1 1 0 5 2.5 2.5 0 0 1 0-5Zm14 0a2.5 2.5 0 1 1 0 5 2.5 2.5 0 0 1 0-5ZM8 21v-1.5A3.5 3.5 0 0 1 11.5 16h1a3.5 3.5 0 0 1 3.5 3.5V21M1.5 21v-1a3 3 0 0 1 3-3h1M22.5 21v-1a3 3 0 0 0-3-3h-1"/>',admin:'<path d="M12 3 5 6v5c0 5 3 8 7 10 4-2 7-5 7-10V6zM9 12l2 2 4-5"/>'};return `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">${icons[name]}</svg>`}
+function icon(name){const icons={home:'<path d="M3 11.5 12 4l9 7.5v8a1 1 0 0 1-1 1h-5v-6H9v6H4a1 1 0 0 1-1-1z"/>',mail:'<path d="M3 5h18v14H3zM3 6l9 7 9-7"/>',book:'<path d="M4 4.5A2.5 2.5 0 0 1 6.5 2H11v18H6.5A2.5 2.5 0 0 0 4 22zM20 4.5A2.5 2.5 0 0 0 17.5 2H13v18h4.5A2.5 2.5 0 0 1 20 22z"/>',ledger:'<path d="M5 3h14v18H5zM8 7h8M8 11h8M8 15h5"/>',org:'<path d="M12 3a3 3 0 1 1 0 6 3 3 0 0 1 0-6ZM5 11a2.5 2.5 0 1 1 0 5 2.5 2.5 0 0 1 0-5Zm14 0a2.5 2.5 0 1 1 0 5 2.5 2.5 0 0 1 0-5ZM8 21v-1.5A3.5 3.5 0 0 1 11.5 16h1a3.5 3.5 0 0 1 3.5 3.5V21M1.5 21v-1a3 3 0 0 1 3-3h1M22.5 21v-1a3 3 0 0 0-3-3h-1"/>',admin:'<path d="M12 3 5 6v5c0 5 3 8 7 10 4-2 7-5 7-10V6zM9 12l2 2 4-5"/>'};return `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">${icons[name]||icons.home}</svg>`}
 function crest(theme=viewTheme()){
   const img=theme==='nocturne'?'nocturne-collective-logo.webp':'sovereign-circle-logo.webp';
   return `<div class="crest crest-${theme}"><img src="${img}" alt="" /></div>`;
@@ -162,7 +258,8 @@ function header(){
 }
 function nav(){
   const lastLabel=effectiveRole()==='game_master'?'Score':(isAdminAccount()&&ui.siteMode==='player'?'Profile':'Admin');
-  return `<nav class="nav"><span class="build-version">BABYBAT v${APP_VERSION}</span>${[['home','Home'],['book','Rules'],['ledger','Ledger'],['org','Organizations'],['admin',lastLabel]].map(([p,l])=>`<button class="${ui.activePage===p?'active':''}" onclick="go('${p}')">${icon(p)}${l}</button>`).join('')}</nav>`;
+  const unread=unreadMailCount();
+  return `<nav class="nav"><span class="build-version">BABYBAT v${APP_VERSION}</span>${[['home','Home'],['mail',unread?`Mail ${unread}`:'Mail'],['book','Rules'],['ledger','Ledger'],['org','Orgs'],['admin',lastLabel]].map(([p,l])=>`<button class="${ui.activePage===p?'active':''}" onclick="go('${p}')">${icon(p)}<span>${l}</span></button>`).join('')}</nav>`;
 }
 
 function ledgerItems(){
@@ -204,6 +301,8 @@ function home(){
   if(effectiveRole()==='admin') return adminHome(p,available,led);
   const moxie=effectiveRole()==='game_master';
   return `<main class="page">${dashboardHero(moxie?'moxie':'shawn',p)}
+  <section class="section presence-section"><div class="section-head"><h2>Game Status</h2><span>organization availability</span></div>${organizationPresence()}</section>
+  ${gameDesk()}
   <section class="section"><div class="grid2"><div class="mini"><strong>${led.length}</strong><span>Scored directives</span></div><div class="mini"><strong>${available.length}</strong><span>Rewards ready</span></div></div></section>
   ${moxie?`<section class="section"><div class="section-head"><h2>Game Master</h2><span>simple workflow</span></div><div class="gm-next-step"><div><span class="eyebrow">NEXT ACTION</span><h3>Score a Directive</h3><p>Paste Moxie's completed scoring ledger, preview it, then import it.</p></div><button class="primary" onclick="go('admin')">Paste Ledger</button></div><button class="ledger-link" onclick="go('ledger')"><span>Review scoring history</span><b>View Ledger ›</b></button></section>`:''}
   <section class="section"><div class="section-head"><h2>Reward Chest</h2><span>${available.length} available</span></div>${rewardChest(available,p,moxie)}</section>
@@ -213,8 +312,9 @@ function home(){
 function adminHome(p,available,led){
   return `<main class="page"><section class="admin-command"><div><span class="eyebrow">Site Administration</span><h2>BabyBat Control Room</h2><p>Maintenance, QA, and live game management stay here. Player Mode remains your normal profile.</p></div><div class="admin-crown">♛</div></section>
   <section class="section"><div class="section-head"><h2>Experience Check</h2><span>switch when needed</span></div><div class="preview-grid"><button class="preview-card sovereign" onclick="setSiteMode('player')"><img src="sovereign-circle-logo.webp"><div><b>Return to Player</b><span>Your live Shawn profile</span></div></button><button class="preview-card nocturne" onclick="setAdminPreview('moxie')"><img src="nocturne-collective-logo.webp"><div><b>Preview Moxie</b><span>Inspect Game Master layout</span></div></button></div></section>
+  <section class="section"><div class="section-head"><h2>Organization Status</h2><span>live availability</span></div>${organizationPresence()}</section>
   <section class="section"><div class="section-head"><h2>Live Game</h2><span>${p.t} lifetime points</span></div><div class="card admin-score"><div><strong>${p.left}</strong><span>points to ${esc(p.tier)}</span></div><div><strong>${available.length}</strong><span>rewards ready</span></div><div><strong>${led.length}</strong><span>scored directives</span></div></div></section>
-  <section class="section"><div class="section-head"><h2>Quick Control</h2><span>site owner</span></div><div class="quick-actions"><button class="action-tile" onclick="go('admin')"><b>Scoring & Rewards</b><span>Paste ledger / manage rewards</span></button><button class="action-tile" onclick="go('org')"><b>Organizations</b><span>Review both rosters</span></button></div></section></main>`;
+  <section class="section"><div class="section-head"><h2>Quick Control</h2><span>site owner</span></div><div class="quick-actions"><button class="action-tile" onclick="go('admin')"><b>Control Center</b><span>Settings / scoring / storage</span></button><button class="action-tile" onclick="go('mail')"><b>BabyBat Mail</b><span>Official game correspondence</span></button><button class="action-tile" onclick="go('org')"><b>Organizations</b><span>Review both rosters</span></button></div></section></main>`;
 }
 function rewardChest(av,p,moxie=false){if(!av.length)return `<div class="empty">No unlocked rewards in the chest yet.<br><br><strong style="color:#d8dce2">Next:</strong> ${esc(p.tier)} at ${p.next} points.</div>`;return av.map(r=>`<div class="card reward-card"><div class="reward-icon">${r.tier==='Sovereign'?'♛':'◆'}</div><div class="reward-main"><h3>${esc(r.tier)} Reward</h3><p>Unlocked at ${r.milestone} · ${esc(r.game)}</p></div><span class="badge available">Available</span>${canRedeemView()?`<button class="use-btn" ${previewReadOnly()?'disabled':''} onclick="${previewReadOnly()?'previewOnly()':`askRedeem('${r.id}')`}">${moxie?"USE SHAWN'S":'USE'}</button>`:''}</div>`).join('')}
 function organizationTeasers(){
@@ -222,6 +322,46 @@ function organizationTeasers(){
   return `<div class="org-teasers">${data.map(e=>`<button class="org-teaser ${esc(e.theme_key||'')}" onclick="openOrganization('${e.slug}')"><img src="${esc(assetUrl(e.logo_path||''))}" alt=""><div><b>${esc(e.name)}</b><span>${memberRows().filter(m=>m.entity_slug===e.slug||m.entity_id===e.id).length} members</span></div><span class="chev">›</span></button>`).join('')}</div>`;
 }
 function activity(x){const sign=x.total>=0?'+':'';return `<div class="card activity"><div class="dot"></div><div class="copy"><h4>${esc(x.directive)}</h4><p>${esc(x.reason||x.title)}</p></div><div class="amount ${x.total<0?'negative':''}">${sign}${x.total}</div></div>`}
+
+
+function gameDesk(){
+  if(ui.demo) return `<section class="section"><div class="section-head"><h2>Game Desk</h2><span>demo</span></div><div class="empty">Live directives and photo submissions appear here.</div></section>`;
+  const active=directives.filter(d=>!['scored','completed','void'].includes(d.status)).slice().reverse();
+  const me=currentEntity()?.id;
+  const mine=evidenceSubmissions.filter(e=>!e.deleted_at&&(e.submitter_entity_id===me||e.recipient_entity_id===me)).slice().reverse();
+  if(effectiveRole()==='game_master'){
+    const pending=mine.filter(e=>e.recipient_entity_id===me&&e.status==='pending');
+    return `<section class="section"><div class="section-head"><h2>Submission Review</h2><span>${pending.length} waiting</span></div>${pending.length?pending.map(submissionReviewCard).join(''):`<div class="empty">No photo evidence is waiting for Nocturne review.</div>`}</section>`;
+  }
+  return `<section class="section"><div class="section-head"><h2>Active Directives</h2><span>${active.length} active</span></div>${active.length?active.map(d=>directiveCard(d)).join(''):`<div class="empty">No active Directives right now.</div>`}${mine.filter(e=>e.submitter_entity_id===me).slice(0,3).length?`<div class="submission-mini-title">Recent submissions</div>${mine.filter(e=>e.submitter_entity_id===me).slice(0,3).map(submissionHistoryCard).join('')}`:''}</section>`;
+}
+function directiveCard(d){
+  const photos=setting('photo_submissions_enabled',true)!==false;
+  const submitted=evidenceSubmissions.filter(e=>e.directive_id===d.id&&!e.deleted_at).length;
+  return `<div class="card directive-card"><div class="directive-top"><div><span class="directive-code">${esc(d.code||'DIRECTIVE')}</span><h3>${esc(d.title||d.code||'Directive')}</h3></div><span class="badge">${esc(String(d.status||'issued').toUpperCase())}</span></div>${d.description?`<p>${esc(d.description)}</p>`:''}<div class="directive-meta"><span>${submitted} photo submission${submitted===1?'':'s'}</span>${photos&&!previewReadOnly()?`<button class="primary compact" onclick="openEvidenceSubmit('${esc(d.id)}')">Submit Photo</button>`:''}</div></div>`;
+}
+function submissionHistoryCard(e){
+  const d=directives.find(x=>x.id===e.directive_id);
+  return `<button class="card submission-row" onclick="openEvidence('${esc(e.id)}')"><div><b>${esc(d?.code||'Directive')}</b><span>${esc(e.caption||'Photo evidence')}</span></div><span class="submission-status ${esc(e.status)}">${esc(e.status)}</span></button>`;
+}
+function submissionReviewCard(e){
+  const d=directives.find(x=>x.id===e.directive_id);
+  return `<div class="card review-card"><div><span class="eyebrow">${esc(d?.code||'DIRECTIVE')}</span><h3>${esc(d?.title||'Photo Evidence')}</h3><p>${esc(e.caption||'No caption')}</p></div><div class="row"><button class="secondary" onclick="openEvidence('${esc(e.id)}')">View Photo</button><button class="primary" onclick="reviewEvidence('${esc(e.id)}','approved')">Approve</button></div></div>`;
+}
+function mailRows(){
+  if(ui.demo) return [];
+  const me=currentEntity()?.id;if(!me)return [];
+  return mailMessages.filter(m=>mailMode==='sent'?m.sender_entity_id===me&&!m.sender_archived_at:m.recipient_entity_id===me&&!m.recipient_archived_at).slice().sort((a,b)=>String(b.created_at).localeCompare(String(a.created_at)));
+}
+function mailPage(){
+  if(setting('mail_enabled',true)===false) return `<main class="page"><section class="section"><div class="empty">BabyBat Mail is disabled by Site Admin.</div></section></main>`;
+  const rows=mailRows(), other=otherGameEntity();
+  return `<main class="page"><section class="mail-hero ${viewTheme()}"><div><span class="eyebrow">Official Game Channel</span><h2>BabyBat Mail</h2><p>${esc(mailAddressForEntity(currentEntity()?.id))}</p></div><button class="primary" ${previewReadOnly()?'disabled':''} onclick="${previewReadOnly()?'previewOnly()':'openComposeMail()'}">New Mail</button></section><section class="section"><div class="mail-tabs"><button class="${mailMode==='inbox'?'active':''}" onclick="setMailMode('inbox')">Inbox <span>${unreadMailCount()}</span></button><button class="${mailMode==='sent'?'active':''}" onclick="setMailMode('sent')">Sent</button></div>${rows.length?`<div class="mail-list">${rows.map(mailCard).join('')}</div>`:`<div class="empty">${mailMode==='sent'?'Nothing sent yet.':'Inbox zero. No game mail waiting.'}</div>`}<div class="mail-route-note">Game-facing identities: ${esc(currentEntity()?.name||'—')} ↔ ${esc(other?.name||'—')}</div></section></main>`;
+}
+function mailCard(m){
+  const incoming=m.recipient_entity_id===currentEntity()?.id;
+  return `<button class="mail-card ${incoming&&!m.recipient_read_at?'unread':''}" onclick="openMail('${esc(m.id)}')"><div class="mail-dot"></div><div class="mail-card-main"><div class="mail-card-head"><b>${esc(incoming?entityName(m.sender_entity_id):entityName(m.recipient_entity_id))}</b><time>${fmtDate(m.created_at)}</time></div><strong>${esc(m.subject)}</strong><p>${esc(String(m.body||'').replace(/\s+/g,' ').slice(0,120))}</p><span class="mail-category">${esc(m.category)}</span></div></button>`;
+}
 
 function charterRows(){
   if(ui.demo) return DEMO.charter;
@@ -242,6 +382,26 @@ function rules(){
 function scoreCard(s){const label=s.label??s[0], pts=Number(s.points??s[1]), def=s.definition??s[2]??'';return `<div class="card score-row"><div><h4>${esc(label)}</h4><p>${esc(def)}</p></div><div class="points ${pts<0?'negative':''}">${pts>0?'+':''}${pts}</div></div>`}
 
 function entityRows(){ return ui.demo ? DEMO.entities : entities; }
+function organizationStatusRows(){
+  if(ui.demo) return DEMO.statuses.map(x=>{const e=DEMO.entities.find(y=>y.slug===x.entity_slug);return {...x,entity_id:e?.id||x.entity_slug};});
+  return organizationStatuses;
+}
+function organizationStatusFor(slug){
+  const entity=entityRows().find(e=>e.slug===slug);
+  const row=organizationStatusRows().find(x=>x.entity_id===entity?.id || x.entity_slug===slug);
+  return row?.status==='closed'?'closed':'open';
+}
+function statusLabel(slug){ return `${entityRows().find(e=>e.slug===slug)?.name||slug} — ${organizationStatusFor(slug).toUpperCase()}`; }
+function canControlOrgStatus(slug){
+  if(ui.demo||previewReadOnly()) return false;
+  if(isAdminAccount()&&ui.siteMode==='admin') return true;
+  const entity=entityRows().find(e=>e.slug===slug);
+  return !!entity && membership?.entity_id===entity.id;
+}
+function organizationPresence(){
+  const slugs=['sovereign-circle','nocturne-collective'];
+  return `<div class="presence-grid">${slugs.map(slug=>{const e=entityRows().find(x=>x.slug===slug);if(!e)return '';const st=organizationStatusFor(slug);return `<div class="presence-card ${esc(e.theme_key||'')} ${st}"><div><span class="presence-dot"></span><div><b>${esc(e.name)}</b><small>${st==='open'?'Open for game activity':'Currently closed'}</small></div></div>${canControlOrgStatus(slug)?`<button onclick="toggleOrganizationStatus('${esc(slug)}')">${st==='open'?'Close':'Open'}</button>`:`<strong>${st.toUpperCase()}</strong>`}</div>`}).join('')}</div>`;
+}
 function memberRows(){ return ui.demo ? DEMO.members : organizationMembers.map(m=>({...m,entity_slug:entityRows().find(e=>e.id===m.entity_id)?.slug})); }
 function organizationsPage(){
   const all=entityRows();
@@ -266,18 +426,23 @@ function admin(){
   const playerUpgrade=accountRole()==='player' && !ui.demo;
   const isMoxie=r==='game_master';
   if(playerMode){
-    return `<main class="page"><section class="section" style="margin-top:4px"><div class="section-head"><h2>Player Profile</h2><span>your normal mode</span></div><div class="card player-profile-card"><div class="eyebrow">Sovereign Circle Player</div><h3>${esc(profile?.display_name||'Shawn')}</h3><p class="small-note">This is your live player account. Use the Player / Admin switch at the very top only when you need to maintain or QA the site.</p></div></section><section class="section account-section"><div class="section-head"><h2>Account</h2><span>live sync</span></div><div class="card account-card"><p class="small-note">${esc(session?.user?.email||'')}<br>Player Mode · Site Admin access available</p><div class="row"><button class="secondary" onclick="syncNow()">Sync</button><button class="danger" onclick="signOut()">Sign Out</button></div></div></section></main>`;
+    return `<main class="page"><section class="section" style="margin-top:4px"><div class="section-head"><h2>Player Profile</h2><span>your normal mode</span></div><div class="card player-profile-card"><div class="eyebrow">Sovereign Circle Player</div><h3>${esc(profile?.display_name||'Shawn')}</h3><p class="small-note">This is your live player account. Use the Player / Admin switch at the very top only when you need to maintain or QA the site.</p></div></section><section class="section account-section"><div class="section-head"><h2>Account</h2><span>live sync</span></div><div class="card account-card"><p class="small-note">${esc(session?.user?.email||'')}<br>Player Mode · Site Admin access available</p><div class="row"><button class="secondary" onclick="syncNow()">Sync</button><button class="danger" onclick="signOut()">Sign Out</button></div><button class="account-reset" onclick="emailPasswordReset()">Email Password Reset</button></div></section></main>`;
   }
   const moxiePreview=isMoxie && previewReadOnly();
   const heading=r==='admin'?'Site Administration':isMoxie?(moxiePreview?'Moxie Preview':'Moxie Scoring Console'):'Administration';
   const sub=r==='admin'?'full access':isMoxie?(moxiePreview?'Game Master layout · read-only QA':'Nocturne Game Master'):'Sovereign access';
   const scoringIntro=gm?`<div class="gm-workflow ${isMoxie?'nocturne':''}"><div class="workflow-step active"><b>1</b><span>Paste ledger</span></div><i>›</i><div class="workflow-step"><b>2</b><span>Preview</span></div><i>›</i><div class="workflow-step"><b>3</b><span>Import</span></div></div>`:'';
-  return `<main class="page"><section class="section" style="margin-top:4px"><div class="section-head"><h2>${heading}</h2><span>${sub}</span></div>${moxiePreview?`<div class="preview-context"><span>Moxie layout preview</span><button onclick="setSiteMode('admin')">Back to Admin Home</button></div>`:''}${scoringIntro}${gm?bulkLedgerForm():`<div class="card"><h3 style="margin-top:0">Permission Model</h3><p class="small-note">Your current game role is <strong>${roleLabel()}</strong>. Players can view the ledger and use unlocked rewards. Game Master/Admin roles can import official scoring ledgers.</p></div>`}${playerUpgrade?adminUpgradeCard():''}</section>
+  return `<main class="page"><section class="section" style="margin-top:4px"><div class="section-head"><h2>${heading}</h2><span>${sub}</span></div>${moxiePreview?`<div class="preview-context"><span>Moxie layout preview</span><button onclick="setSiteMode('admin')">Back to Admin Home</button></div>`:''}${scoringIntro}${isMoxie&&!moxiePreview?directiveIssuerCard():''}${gm?bulkLedgerForm():`<div class="card"><h3 style="margin-top:0">Permission Model</h3><p class="small-note">Your current game role is <strong>${roleLabel()}</strong>. Players can view the ledger and use unlocked rewards. Game Master/Admin roles can import official scoring ledgers.</p></div>`}${playerUpgrade?adminUpgradeCard():''}</section>
   <section class="section"><div class="section-head"><h2>${isMoxie?'Reward Chest':'Reward Control'}</h2><span>${isMoxie?'shared with Shawn':'shared object'}</span></div>${adminRewards(rr)}</section>
-  ${r==='admin'?`<section class="section"><div class="section-head"><h2>Experience QA</h2><span>admin tools</span></div><div class="card"><p class="small-note">Player Mode is your real Shawn profile. Use Preview Moxie from the Admin Home only when you need to inspect her interface.</p></div></section>`:''}
-  ${ui.demo?`<section class="section"><div class="card"><button class="secondary" onclick="toggleDemoViewer()">Preview ${ui.demoViewer==='moxie'?'Shawn / Player':'Moxie / Game Master'}</button><button class="danger" style="margin-left:8px" onclick="leaveDemo()">Exit Demo</button></div></section>`:`<section class="section account-section"><div class="section-head"><h2>Account</h2><span>live sync</span></div><div class="card account-card"><p class="small-note">${esc(session?.user?.email||'')}<br>${roleLabel(accountRole())} · Supabase connected</p><div class="row"><button class="secondary" onclick="syncNow()">Sync</button><button class="danger" onclick="signOut()">Sign Out</button></div></div></section>`}</main>`;
+  ${r==='admin'?adminControlCenter()+`<section class="section"><div class="section-head"><h2>Experience QA</h2><span>admin tools</span></div><div class="card"><p class="small-note">Player Mode is your real Shawn profile. Use Preview Moxie from the Admin Home only when you need to inspect her interface.</p></div></section>`:''}
+  ${ui.demo?`<section class="section"><div class="card"><button class="secondary" onclick="toggleDemoViewer()">Preview ${ui.demoViewer==='moxie'?'Shawn / Player':'Moxie / Game Master'}</button><button class="danger" style="margin-left:8px" onclick="leaveDemo()">Exit Demo</button></div></section>`:`<section class="section account-section"><div class="section-head"><h2>Account</h2><span>live sync</span></div><div class="card account-card"><p class="small-note">${esc(session?.user?.email||'')}<br>${roleLabel(accountRole())} · Supabase connected</p><div class="row"><button class="secondary" onclick="syncNow()">Sync</button><button class="danger" onclick="signOut()">Sign Out</button></div><button class="account-reset" onclick="emailPasswordReset()">Email Password Reset</button></div></section>`}</main>`;
 }
 function adminUpgradeCard(){return `<div class="card admin-upgrade"><div class="eyebrow">Site Owner</div><h3>Unlock Site Admin</h3><p class="small-note">Use the one-time admin upgrade code to turn this account into the site owner. That enables the top-level Player / Admin mode switch and Moxie QA preview.</p><div class="field"><label>Admin Upgrade Code</label><input id="adminUpgradeCode" class="input" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="ADM-…"></div><button id="adminUpgradeButton" class="primary" onclick="claimAdminUpgrade()">Activate Site Admin</button></div>`}
+
+function directiveIssuerCard(){
+  return `<div class="card directive-issuer"><div class="bulk-title"><div><div class="eyebrow">Nocturne Desk</div><h3>Issue Directive</h3></div><span class="badge">NEW</span></div><p class="small-note">Create the official Directive and deliver it to Sovereign Circle through BabyBat Mail in one step.</p><div class="form-grid"><div class="field"><label>Directive Code</label><input id="newDirectiveCode" class="input" placeholder="SD-004"></div><div class="field"><label>Title</label><input id="newDirectiveTitle" class="input" placeholder="Directive title"></div><div class="field"><label>Directive Text</label><textarea id="newDirectiveBody" class="input" rows="4" placeholder="Requirements, deadline, evidence rules…"></textarea></div><button class="primary" onclick="issueDirective()">Issue + Send to Sovereign</button></div></div>`;
+}
+
 function bulkLedgerForm(){
   const rows=bulkLedgerRows||[];
   const importable=rows.filter(r=>r.valid&&!r.duplicate);
@@ -424,47 +589,119 @@ function parseBulkLedger(text){
   });
   return {rows,ignored};
 }
+
+function adminControlCenter(){
+  if(effectiveRole()!=='admin') return '';
+  const auto=setting('photo_auto_delete_after_save',true)!==false;
+  const eligible=evidenceSubmissions.filter(e=>!e.deleted_at&&e.delete_after&&new Date(e.delete_after)<=new Date()).length;
+  return `<section class="section admin-control-center"><div class="section-head"><h2>Owner Control Center</h2><span>database-backed</span></div>
+  <div class="admin-setting-grid">
+    <div class="card admin-panel"><div class="eyebrow">GAME MECHANICS</div><h3>Core Game</h3><div class="field"><label>Game Name</label><input id="setGameName" class="input" value="${esc(game?.name||'')}"></div><div class="field"><label>Reward Interval</label><input id="setRewardInterval" class="input" type="number" min="1" value="${Number(game?.reward_interval||200)}"></div><button class="primary" onclick="saveGameBasics()">Save Game Settings</button></div>
+    <div class="card admin-panel"><div class="eyebrow">PHOTO STORAGE</div><h3>Evidence Retention</h3><div class="field"><label>Max Long Edge (px)</label><input id="setPhotoEdge" class="input" type="number" min="800" max="4000" value="${Number(setting('photo_max_long_edge',1800))}"></div><div class="field"><label>Compression Quality (0.50–0.95)</label><input id="setPhotoQuality" class="input" type="number" step="0.01" min="0.5" max="0.95" value="${Number(setting('photo_quality',0.82))}"></div><div class="field"><label>Delete Grace Period After Save (days)</label><input id="setPhotoRetention" class="input" type="number" min="1" max="365" value="${Number(setting('photo_retention_days_after_save',14))}"></div><label class="toggle-row"><input id="setPhotoAutoDelete" type="checkbox" ${auto?'checked':''}><span>Make saved photos eligible for auto-cleanup</span></label><button class="primary" onclick="savePhotoSettings()">Save Photo Settings</button></div>
+    <div class="card admin-panel"><div class="eyebrow">MAIL</div><h3>Official Addresses</h3><div class="field"><label>Sovereign Circle</label><input id="setSovMail" class="input" value="${esc(setting('sovereign_mail_address','chambers@sovereigncircle.org'))}"></div><div class="field"><label>Nocturne Collective</label><input id="setNocMail" class="input" value="${esc(setting('nocturne_mail_address','nocturnecollective@nightshift.net'))}"></div><label class="toggle-row"><input id="setMailEnabled" type="checkbox" ${setting('mail_enabled',true)!==false?'checked':''}><span>Enable BabyBat Mail</span></label><button class="primary" onclick="saveMailSettings()">Save Mail Settings</button></div>
+    <div class="card admin-panel"><div class="eyebrow">INTEGRATIONS</div><h3>Connection Status</h3><div class="diag-row"><span>ChatGPT bridge data</span><b class="ok">READY</b></div><div class="diag-row"><span>Custom ChatGPT app</span><b class="pending">WAITING ON ACCOUNT SUPPORT</b></div><div class="diag-row"><span>SMS provider</span><b class="pending">NOT CONFIGURED</b></div><label class="toggle-row"><input id="setSmsEnabled" type="checkbox" ${setting('sms_enabled',false)===true?'checked':''}><span>SMS master switch (takes effect after provider setup)</span></label><button class="secondary" onclick="saveIntegrationSettings()">Save Integration Switches</button></div>
+  </div></section>
+  <section class="section"><div class="section-head"><h2>Storage Health</h2><span>${humanBytes(storageBytes())} stored</span></div><div class="card storage-health"><div><strong>${evidenceSubmissions.filter(e=>!e.deleted_at).length}</strong><span>photos in BabyBat</span></div><div><strong>${eligible}</strong><span>eligible for cleanup</span></div><div><strong>${humanBytes(storageBytes())}</strong><span>current evidence size</span></div></div><button class="danger full-btn" ${eligible?'':'disabled'} onclick="purgeEligiblePhotos()">Purge ${eligible} Eligible Photo${eligible===1?'':'s'}</button></section>
+  <section class="section"><div class="section-head"><h2>Scoring Rules</h2><span>edit without redeploy</span></div><div class="admin-rule-list">${scoringRules.map(r=>`<div class="admin-rule-row"><span>${esc(r.label)}</span><input class="input score-admin-input" data-score-id="${esc(r.id)}" type="number" value="${Number(r.points)}"></div>`).join('')}</div><button class="primary full-btn" onclick="saveScoringRules()">Save Scoring Values</button></section>
+  <section class="section"><div class="section-head"><h2>Diagnostics</h2><span>v${APP_VERSION}</span></div><div class="card diagnostics"><div><span>Supabase</span><b class="ok">CONNECTED</b></div><div><span>Mail records</span><b>${mailMessages.length}</b></div><div><span>Evidence records</span><b>${evidenceSubmissions.length}</b></div><div><span>Notification queue</span><b>${notificationEvents.filter(n=>n.sms_status==='queued').length}</b></div></div></section>`;
+}
+
 function adminRewards(rr){const av=rr.filter(r=>r.status==='available');if(!av.length)return `<div class="empty">No available rewards to redeem.</div>`;return av.map(r=>`<div class="card reward-card"><div class="reward-icon">◆</div><div class="reward-main"><h3>${esc(r.tier)} Reward</h3><p>Milestone ${r.milestone}</p></div>${canRedeemView()?`<button class="use-btn" ${previewReadOnly()?'disabled':''} onclick="${previewReadOnly()?'previewOnly()':`askRedeem('${r.id}')`}">${isGMView()?"USE SHAWN'S":'USE'}</button>`:''}</div>`).join('')}
 
-function loadingScreen(){return `<main class="auth-wrap"><div class="auth-card">${crest('sovereign')}<div class="eyebrow">BabyBat Game Hub</div><h1>Opening the vault…</h1><div class="loader"></div></div></main>`}
-function authScreen(message=''){
-  return `<main class="auth-wrap"><div class="auth-card">${crest('sovereign')}<div class="eyebrow">BabyBat Game Hub</div><h1>Enter the Game</h1><p class="auth-copy">One app. Separate Player, Game Master, and Site Admin experiences. Score and rewards stay synced across devices.</p>${message?`<div class="notice">${esc(message)}</div>`:''}<div class="form-grid auth-form"><div class="field"><label>Display Name</label><input id="authName" class="input" placeholder="Shawn or Moxie"></div><div class="field"><label>Email</label><input id="authEmail" class="input" type="email" autocomplete="email" placeholder="you@example.com"></div><div class="field"><label>Password</label><input id="authPassword" class="input" type="password" autocomplete="current-password" minlength="8" placeholder="8+ characters"></div><button class="primary" onclick="signIn()">Sign In</button><button class="secondary" onclick="signUp()">Create Account</button><button class="ghost" onclick="enterDemo()">Explore Demo</button></div><p class="small-note">Accounts do not automatically receive game access. That prevents a random signup from seeing Sovereign/Nocturne data.</p></div></main>`;
+function loadingScreen(){return `<main class="auth-wrap"><div class="auth-card">${crest('sovereign')}<div class="eyebrow">BabyBat Game Hub</div><h1>Opening the vault…</h1><div class="loader"></div><p class="small-note">BABYBAT v${APP_VERSION}</p></div></main>`}
+function loginScreen(){
+  return `<main class="auth-wrap"><div class="auth-card">${crest('sovereign')}<div class="eyebrow">BabyBat Game Hub</div><h1>Enter the Game</h1><p class="auth-copy">Sign in to your existing BabyBat account.</p>${authNoticeHtml()}<div class="form-grid auth-form"><div class="field"><label>Email</label><input id="authEmail" class="input" type="email" autocomplete="email" autocapitalize="none" spellcheck="false" value="${esc(authDraft.email)}" placeholder="you@example.com"></div>${passwordField('authPassword','Password','current-password')}<button class="primary" onclick="signIn()">Sign In</button><button class="auth-link" onclick="openForgotPassword()">Forgot Password?</button>${authNeedsConfirmation&&authDraft.email?`<button class="secondary" onclick="resendConfirmation()">Resend Confirmation Email</button>`:''}<div class="auth-divider"><span>or</span></div><button class="secondary" onclick="openSignUp()">Create Account</button><button class="ghost" onclick="enterDemo()">Explore Demo</button></div><p class="small-note auth-foot">Accounts only receive the role tied to their one-time access code. Shawn and Moxie stay isolated to their own views.</p><div class="auth-version">BABYBAT v${APP_VERSION}</div></div></main>`;
+}
+function signupScreen(){
+  return `<main class="auth-wrap"><div class="auth-card">${crest('sovereign')}<div class="eyebrow">New Account</div><h1>Create BabyBat Login</h1><p class="auth-copy">Create the account first. After email confirmation, enter the one-time role code.</p>${authNoticeHtml()}<div class="form-grid auth-form"><div class="field"><label>Display Name</label><input id="authName" class="input" autocomplete="name" value="${esc(authDraft.name)}" placeholder="Shawn or Moxie"></div><div class="field"><label>Email</label><input id="authEmail" class="input" type="email" autocomplete="email" autocapitalize="none" spellcheck="false" value="${esc(authDraft.email)}" placeholder="you@example.com"></div>${passwordField('authPassword','Password','new-password')}${passwordField('authPasswordConfirm','Confirm Password','new-password')}<button class="primary" onclick="signUp()">Create Account</button><button class="auth-link" onclick="openLogin()">Back to Sign In</button></div><div class="auth-version">BABYBAT v${APP_VERSION}</div></div></main>`;
+}
+function forgotPasswordScreen(){
+  return `<main class="auth-wrap"><div class="auth-card">${crest('sovereign')}<div class="eyebrow">Account Recovery</div><h1>Reset Password</h1><p class="auth-copy">Enter the account email. BabyBat will send a secure Supabase recovery link back to this app.</p>${authNoticeHtml()}<div class="form-grid auth-form"><div class="field"><label>Email</label><input id="authEmail" class="input" type="email" autocomplete="email" autocapitalize="none" spellcheck="false" value="${esc(authDraft.email)}" placeholder="you@example.com"></div><button class="primary" onclick="sendPasswordReset()">Send Reset Email</button><button class="auth-link" onclick="openLogin()">Back to Sign In</button></div><p class="small-note auth-foot">If the email exists, use the newest reset email. Recovery links expire and are intended for one use.</p><div class="auth-version">BABYBAT v${APP_VERSION}</div></div></main>`;
+}
+function resetPasswordScreen(){
+  return `<main class="auth-wrap"><div class="auth-card">${crest('sovereign')}<div class="eyebrow">Secure Recovery</div><h1>Choose New Password</h1><p class="auth-copy">This recovery link is authenticated. Set a new password, then BabyBat will return you to a fresh sign-in.</p>${authNoticeHtml()}<div class="form-grid auth-form">${passwordField('newPassword','New Password','new-password')}${passwordField('newPasswordConfirm','Confirm New Password','new-password')}<button class="primary" onclick="finishPasswordReset()">Save New Password</button><button class="auth-link" onclick="cancelRecovery()">Cancel and Return to Sign In</button></div><div class="auth-version">BABYBAT v${APP_VERSION}</div></div></main>`;
+}
+function authScreen(){
+  if(authMode==='signup') return signupScreen();
+  if(authMode==='forgot') return forgotPasswordScreen();
+  return loginScreen();
 }
 function pendingScreen(){
-  return `<main class="auth-wrap"><div class="auth-card">${crest('sovereign')}<div class="eyebrow">Account created</div><h1>Unlock Game Access</h1><p class="auth-copy">Enter the one-time code for your assigned role. Access codes are server-side, role-bound, and single-use.</p><div class="field"><label>One-Time Access Code</label><input id="accessCode" class="input" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="SC-… or NC-…"></div><div class="form-grid" style="margin-top:10px"><button id="claimButton" class="primary" onclick="claimAccess()">Unlock My Role</button><button class="secondary" onclick="enterDemo()">Preview the Game</button><button class="danger" onclick="signOut()">Sign Out</button></div><div class="card id-card"><span>Signed in as</span><strong>${esc(session?.user?.email||'')}</strong><span>Access ID</span><code>${esc(session?.user?.id||'')}</code></div></div></main>`;
+  return `<main class="auth-wrap"><div class="auth-card">${crest('sovereign')}<div class="eyebrow">Account Ready</div><h1>Unlock Game Access</h1><p class="auth-copy">Enter the one-time code for your assigned role. The role is applied only to this signed-in account.</p><div class="field"><label>One-Time Access Code</label><input id="accessCode" class="input" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="SC-… or NC-…"></div><div class="form-grid" style="margin-top:10px"><button id="claimButton" class="primary" onclick="claimAccess()">Unlock My Role</button><button class="secondary" onclick="enterDemo()">Preview the Game</button><button class="danger" onclick="signOut()">Sign Out</button></div><div class="card id-card"><span>Signed in as</span><strong>${esc(session?.user?.email||'')}</strong><span>Access ID</span><code>${esc(session?.user?.id||'')}</code></div><div class="auth-version">BABYBAT v${APP_VERSION}</div></div></main>`;
 }
-function errorScreen(){return `<main class="auth-wrap"><div class="auth-card">${crest('sovereign')}<div class="eyebrow">Connection issue</div><h1>Vault didn't open</h1><div class="notice">${esc(remoteError||'Unknown error')}</div><div class="form-grid"><button class="primary" onclick="syncNow()">Try Again</button><button class="secondary" onclick="enterDemo()">Open Demo</button><button class="danger" onclick="signOut()">Sign Out</button></div></div></main>`}
+function errorScreen(){return `<main class="auth-wrap"><div class="auth-card">${crest('sovereign')}<div class="eyebrow">Connection issue</div><h1>Vault didn't open</h1><div class="notice">${esc(remoteError||'Unknown error')}</div><div class="form-grid"><button class="primary" onclick="syncNow()">Try Again</button><button class="secondary" onclick="enterDemo()">Open Demo</button><button class="danger" onclick="signOut()">Sign Out</button></div><div class="auth-version">BABYBAT v${APP_VERSION}</div></div></main>`}
 
 function render(){
   const root=document.getElementById('app');
   document.body.dataset.theme=viewTheme();
   if(!ui.demo){
+    if(authMode==='reset'){root.innerHTML=resetPasswordScreen();return}
     if(remoteStatus==='loading'){root.innerHTML=loadingScreen();return}
-    if(!session){root.innerHTML=authScreen(remoteError);return}
+    if(!session){root.innerHTML=authScreen();return}
     if(remoteStatus==='pending'){root.innerHTML=pendingScreen();return}
     if(remoteStatus==='error'){root.innerHTML=errorScreen();return}
   }
-  const pages={home,book:rules,ledger:ledgerPage,org:organizationsPage,admin};
+  const pages={home,mail:mailPage,book:rules,ledger:ledgerPage,org:organizationsPage,admin};
   root.innerHTML=siteModeSwitcher()+header()+(pages[ui.activePage]||home)()+nav();
 }
 
 async function boot(){
+  const callbackType=authCallbackType();
   const callbackFailure=authCallbackError();
-  if(callbackFailure) remoteError=callbackFailure;
+  if(callbackFailure){
+    setAuthNotice(callbackFailure,'error');
+    authMode='login';
+  }else if(callbackType==='recovery'){
+    authMode='reset';
+    authRecoveryActive=true;
+  }
   render();
+
+  db.auth.onAuthStateChange((event,s2)=>{
+    // Keep auth callbacks lightweight; schedule app/database work after Supabase releases its auth lock.
+    setTimeout(async()=>{
+      session=s2;
+      if(event==='PASSWORD_RECOVERY'){
+        authRecoveryActive=true;
+        authMode='reset';
+        remoteStatus='ready';
+        setAuthNotice('Recovery link accepted. Choose a new password.','success');
+        render();
+        return;
+      }
+      if(event==='SIGNED_OUT'){
+        clearRemote();
+        remoteStatus='ready';
+        ui.demo=false;ui.siteMode='player';ui.adminPreview='none';saveUI();
+        if(authMode!=='forgot'&&authMode!=='signup') authMode='login';
+        render();
+        return;
+      }
+      if(session){
+        ui.demo=false;saveUI();
+        if(authMode==='reset'){remoteStatus='ready';render();return}
+        await loadRemote({silent:remoteStatus==='ready'});
+      }
+    },0);
+  });
+
   const {data:{session:s},error}=await db.auth.getSession();
   if(error){remoteError=error.message;remoteStatus='error';render();return}
   session=s;
+  if(authMode==='reset'){
+    remoteStatus='ready';
+    if(!session) setAuthNotice('This recovery link is invalid or expired. Request a new reset email.','error');
+    render();
+    return;
+  }
   if(session) await loadRemote(); else {remoteStatus='ready';render()}
-  db.auth.onAuthStateChange(async (_event,s2)=>{
-    session=s2;
-    if(session){ui.demo=false;saveUI();await loadRemote()}else{clearRemote();remoteStatus='ready';render()}
-  });
 }
-function clearRemote(){game=null;membership=null;entities=[];organizationMembers=[];directives=[];pointTransactions=[];rewards=[];tiers=[];scoringRules=[];ruleSections=[];profile=null;stopRealtime()}
-async function loadRemote(){
+
+function clearRemote(){game=null;membership=null;entities=[];organizationStatuses=[];organizationMembers=[];directives=[];pointTransactions=[];rewards=[];tiers=[];scoringRules=[];ruleSections=[];appSettings=[];mailMessages=[];evidenceSubmissions=[];notificationEvents=[];profile=null;stopRealtime()}
+async function loadRemote({silent=false}={}){
   if(!session) return;
-  remoteStatus='loading'; remoteError=''; render();
+  if(!silent){remoteStatus='loading'; render();}
+  remoteError='';
   try{
     const [prof,mems] = await Promise.all([
       db.from('profiles').select('id,display_name').eq('id',session.user.id).maybeSingle(),
@@ -485,18 +722,23 @@ async function loadRemote(){
       if(!['none','moxie'].includes(ui.adminPreview)) ui.adminPreview='none';
     }
     saveUI();
-    const [er,om,dr,pr,rr,tr,sr,rb] = await Promise.all([
+    const [er,osr,om,dr,pr,rr,tr,sr,rb,aset,mail,evid,notif] = await Promise.all([
       db.from('game_entities').select('*').order('name'),
+      db.from('organization_status').select('*').eq('game_id',game.id),
       db.from('organization_members').select('*').eq('game_id',game.id).eq('is_active',true).order('sort_order'),
       db.from('directives').select('*').eq('game_id',game.id).order('created_at'),
       db.from('point_transactions').select('*').eq('game_id',game.id).order('created_at'),
       db.from('rewards').select('*').eq('game_id',game.id).order('milestone'),
       db.from('reward_tiers').select('*').eq('game_id',game.id).order('cycle_order'),
       db.from('scoring_rules').select('*').eq('game_id',game.id).eq('is_active',true).order('sort_order'),
-      db.from('rulebook_sections').select('*').eq('game_id',game.id).eq('is_active',true).eq('version','1.0').order('sort_order')
+      db.from('rulebook_sections').select('*').eq('game_id',game.id).eq('is_active',true).eq('version','1.0').order('sort_order'),
+      db.from('app_settings').select('*').eq('game_id',game.id),
+      db.from('mail_messages').select('*').eq('game_id',game.id).order('created_at',{ascending:false}),
+      db.from('evidence_submissions').select('*').eq('game_id',game.id).order('created_at',{ascending:false}),
+      db.from('notification_events').select('*').eq('game_id',game.id).order('created_at',{ascending:false}).limit(100)
     ]);
-    for(const r of [er,om,dr,pr,rr,tr,sr,rb]) if(r.error) throw r.error;
-    entities=er.data||[];organizationMembers=om.data||[];directives=dr.data||[];pointTransactions=pr.data||[];rewards=rr.data||[];tiers=tr.data||[];scoringRules=sr.data||[];ruleSections=rb.data||[];
+    for(const r of [er,osr,om,dr,pr,rr,tr,sr,rb,aset,mail,evid,notif]) if(r.error) throw r.error;
+    entities=er.data||[];organizationStatuses=osr.data||[];organizationMembers=om.data||[];directives=dr.data||[];pointTransactions=pr.data||[];rewards=rr.data||[];tiers=tr.data||[];scoringRules=sr.data||[];ruleSections=rb.data||[];appSettings=aset.data||[];mailMessages=mail.data||[];evidenceSubmissions=evid.data||[];notificationEvents=notif.data||[];
     remoteStatus='ready';
     startRealtime();
     render();
@@ -509,9 +751,13 @@ function startRealtime(){
     .on('postgres_changes',{event:'*',schema:'public',table:'rewards',filter:`game_id=eq.${game.id}`},queueRealtimeReload)
     .on('postgres_changes',{event:'*',schema:'public',table:'directives',filter:`game_id=eq.${game.id}`},queueRealtimeReload)
     .on('postgres_changes',{event:'*',schema:'public',table:'organization_members',filter:`game_id=eq.${game.id}`},queueRealtimeReload)
+    .on('postgres_changes',{event:'*',schema:'public',table:'organization_status',filter:`game_id=eq.${game.id}`},queueRealtimeReload)
+    .on('postgres_changes',{event:'*',schema:'public',table:'mail_messages',filter:`game_id=eq.${game.id}`},queueRealtimeReload)
+    .on('postgres_changes',{event:'*',schema:'public',table:'evidence_submissions',filter:`game_id=eq.${game.id}`},queueRealtimeReload)
+    .on('postgres_changes',{event:'*',schema:'public',table:'app_settings',filter:`game_id=eq.${game.id}`},queueRealtimeReload)
     .subscribe();
 }
-function queueRealtimeReload(){clearTimeout(realtimeTimer);realtimeTimer=setTimeout(()=>loadRemote(),350)}
+function queueRealtimeReload(){clearTimeout(realtimeTimer);realtimeTimer=setTimeout(()=>loadRemote({silent:true}),350)}
 function stopRealtime(){if(realtimeChannel){db.removeChannel(realtimeChannel);realtimeChannel=null}}
 
 window.go=p=>{ui.activePage=p;saveUI();render();window.scrollTo({top:0,behavior:'smooth'})}
@@ -524,46 +770,184 @@ window.setAdminPreview=v=>{if(!isAdminAccount())return;ui.siteMode='admin';ui.ad
 window.previewOnly=()=>toast('Moxie preview is read-only. Tap Admin Home at the top to return.')
 window.openOrganization=slug=>{ui.orgSlug=slug;ui.activePage='org';saveUI();render();window.scrollTo({top:0,behavior:'smooth'})}
 window.setOrganization=slug=>{ui.orgSlug=slug;saveUI();render()}
+window.toggleOrganizationStatus=async slug=>{
+  if(ui.demo){toast('Demo mode — status changes are not saved');return}
+  if(!canControlOrgStatus(slug)){toast('You cannot change that organization status');return}
+  const entity=entityRows().find(e=>e.slug===slug);
+  if(!entity||!game)return;
+  const next=organizationStatusFor(slug)==='open'?'closed':'open';
+  const payload={game_id:game.id,entity_id:entity.id,status:next,updated_by_user_id:session.user.id,updated_at:new Date().toISOString()};
+  const {error}=await db.from('organization_status').upsert(payload,{onConflict:'game_id,entity_id'});
+  if(error){toast(error.message);return}
+  await loadRemote({silent:true});
+  toast(`${entity.name} is now ${next.toUpperCase()}`);
+}
 window.openMember=id=>{const m=memberRows().find(x=>String(x.id)===String(id));if(!m)return;document.body.insertAdjacentHTML('beforeend',`<div class="modal-back" id="memberModal" onclick="if(event.target.id==='memberModal')closeMember()"><div class="modal member-modal">${m.image_path?`<img src="${esc(assetUrl(m.image_path))}" alt="${esc(m.name)}">`:`<div class="member-placeholder large">${esc(m.name.slice(0,1))}</div>`}<div class="member-modal-copy"><div class="eyebrow">${esc(m.role_name||'Member')}</div><h3>${esc(m.name)}</h3><strong>${esc(m.position_title)}</strong>${m.department?`<p>${esc(m.department)}</p>`:''}<button class="secondary" onclick="closeMember()">Close</button></div></div></div>`)}
 window.closeMember=()=>document.getElementById('memberModal')?.remove()
 window.syncNow=async()=>{if(ui.demo)return;await loadRemote();toast('Game state synced')}
 window.claimAccess=async()=>{
-  const code=document.getElementById('accessCode')?.value.trim();
+  const code=normalizeAccessCode(document.getElementById('accessCode')?.value||'');
   if(!code){toast('Enter your one-time access code');return}
   const btn=document.getElementById('claimButton');if(btn){btn.disabled=true;btn.textContent='Unlocking…'}
   const {data,error}=await db.from('access_claims').insert({user_id:session.user.id,requested_code:code}).select('status,role_granted,label').single();
   if(error){toast(error.message);if(btn){btn.disabled=false;btn.textContent='Unlock My Role'};return}
+  await applyCanonicalClaimName(data?.label,data?.role_granted);
   await loadRemote();toast(`${data?.label||'Game access'} unlocked`)
 }
 window.claimAdminUpgrade=async()=>{
-  const code=document.getElementById('adminUpgradeCode')?.value.trim();
+  const code=normalizeAccessCode(document.getElementById('adminUpgradeCode')?.value||'');
   if(!code){toast('Enter the Site Admin upgrade code');return}
   const btn=document.getElementById('adminUpgradeButton');if(btn){btn.disabled=true;btn.textContent='Activating…'}
   const {data,error}=await db.from('access_claims').insert({user_id:session.user.id,requested_code:code}).select('status,role_granted,label').single();
   if(error){toast(error.message);if(btn){btn.disabled=false;btn.textContent='Activate Site Admin'};return}
+  await applyCanonicalClaimName(data?.label,data?.role_granted);
   ui.siteMode='player';ui.adminPreview='none';saveUI();await loadRemote();toast(`${data?.label||'Site Admin'} activated — Player Mode is your default`)
 }
 
+window.emailPasswordReset=async()=>{
+  const email=session?.user?.email;
+  if(!email){toast('No signed-in email found');return}
+  const redirectTo=authRedirectUrl();
+  const {error}=await db.auth.resetPasswordForEmail(email,redirectTo?{redirectTo}:undefined);
+  if(error){toast(friendlyAuthError(error));return}
+  toast(`Password reset email sent to ${email}`);
+}
+window.togglePassword=(id,btn)=>{
+  const input=document.getElementById(id);if(!input)return;
+  const showing=input.type==='text';input.type=showing?'password':'text';
+  if(btn){btn.textContent=showing?'Show':'Hide';btn.setAttribute('aria-label',showing?'Show password':'Hide password')}
+}
+window.openLogin=()=>{captureAuthDraft();authMode='login';authNeedsConfirmation=false;setAuthNotice('');remoteStatus='ready';render()}
+window.openSignUp=()=>{captureAuthDraft();authMode='signup';authNeedsConfirmation=false;setAuthNotice('');remoteStatus='ready';render()}
+window.openForgotPassword=()=>{captureAuthDraft();authMode='forgot';authNeedsConfirmation=false;setAuthNotice('');remoteStatus='ready';render()}
+window.cancelRecovery=async()=>{
+  if(authRecoveryActive&&session){try{await db.auth.signOut({scope:'local'})}catch{}}
+  authRecoveryActive=false;session=null;authMode='login';setAuthNotice('Password recovery canceled.','info');cleanAuthUrl();remoteStatus='ready';render();
+}
 window.signUp=async()=>{
+  captureAuthDraft();
   const name=document.getElementById('authName')?.value.trim()||'Player';
   const email=document.getElementById('authEmail')?.value.trim();
   const password=document.getElementById('authPassword')?.value||'';
-  if(!email||password.length<8){remoteError='Enter a valid email and a password with at least 8 characters.';render();return}
-  remoteStatus='loading';render();
+  const confirm=document.getElementById('authPasswordConfirm')?.value||'';
+  authDraft={name,email:email||''};
+  if(!email||password.length<8){setAuthNotice('Enter a valid email and a password with at least 8 characters.','error');render();return}
+  if(password!==confirm){setAuthNotice('The two passwords do not match.','error');render();return}
+  remoteStatus='loading';setAuthNotice('');render();
   const redirectOrigin=authRedirectUrl();
   const signUpOptions={data:{display_name:name},...(redirectOrigin?{emailRedirectTo:redirectOrigin}:{})};
   const {data,error}=await db.auth.signUp({email,password,options:signUpOptions});
-  if(error){remoteError=error.message;session=null;remoteStatus='ready';render();return}
+  if(error){session=null;remoteStatus='ready';authMode='signup';setAuthNotice(friendlyAuthError(error),'error');render();return}
   session=data.session;
-  if(session){await loadRemote()}else{remoteStatus='ready';session=null;remoteError=`Account created. Open the confirmation email; it should return you to ${authRedirectUrl()||'this app'}. Then sign in.`;render()}
+  if(session){authMode='login';await loadRemote()}
+  else{
+    remoteStatus='ready';session=null;authMode='login';authNeedsConfirmation=true;
+    setAuthNotice(`Account created. A confirmation email was sent to ${email}. Confirm it, then sign in.`,'success');render();
+  }
+}
+window.resendConfirmation=async()=>{
+  captureAuthDraft();const email=authDraft.email;
+  if(!email){setAuthNotice('Enter the account email first.','error');render();return}
+  const options=authRedirectUrl()?{emailRedirectTo:authRedirectUrl()}:undefined;
+  const {error}=await db.auth.resend({type:'signup',email,...(options?{options}:{})});
+  if(error){setAuthNotice(friendlyAuthError(error),'error');render();return}
+  authNeedsConfirmation=true;setAuthNotice(`A fresh confirmation email was sent to ${email}. Use the newest email.`,'success');render();
 }
 window.signIn=async()=>{
-  const email=document.getElementById('authEmail')?.value.trim();const password=document.getElementById('authPassword')?.value||'';
-  if(!email||!password){remoteError='Enter your email and password.';render();return}
-  remoteStatus='loading';render();const {data,error}=await db.auth.signInWithPassword({email,password});
-  if(error){remoteError=error.message;session=null;remoteStatus='ready';render();return}session=data.session;await loadRemote();
+  captureAuthDraft();const email=document.getElementById('authEmail')?.value.trim();const password=document.getElementById('authPassword')?.value||'';
+  authDraft.email=email||'';
+  if(!email||!password){setAuthNotice('Enter your email and password.','error');render();return}
+  remoteStatus='loading';setAuthNotice('');render();
+  const {data,error}=await db.auth.signInWithPassword({email,password});
+  if(error){session=null;remoteStatus='ready';authMode='login';const msg=friendlyAuthError(error);authNeedsConfirmation=msg.toLowerCase().includes('confirmation');setAuthNotice(msg,'error');render();return}
+  session=data.session;authMode='login';authNeedsConfirmation=false;setAuthNotice('');await loadRemote();
 }
-window.signOut=async()=>{stopRealtime();await db.auth.signOut();session=null;clearRemote();ui.demo=false;ui.siteMode='player';ui.adminPreview='none';saveUI();remoteStatus='ready';render()}
+window.sendPasswordReset=async()=>{
+  captureAuthDraft();const email=authDraft.email;
+  if(!email){setAuthNotice('Enter the account email first.','error');render();return}
+  setAuthNotice('Sending secure reset email…','info');render();
+  const redirectTo=authRedirectUrl();
+  const {error}=await db.auth.resetPasswordForEmail(email,redirectTo?{redirectTo}:undefined);
+  if(error){setAuthNotice(friendlyAuthError(error),'error');render();return}
+  setAuthNotice(`If ${email} is a BabyBat account, a password reset email has been sent. Use the newest message.`,'success');render();
+}
+window.finishPasswordReset=async()=>{
+  const password=document.getElementById('newPassword')?.value||'';
+  const confirm=document.getElementById('newPasswordConfirm')?.value||'';
+  if(!session){setAuthNotice('This recovery link is no longer active. Request a new reset email.','error');render();return}
+  if(password.length<8){setAuthNotice('Use a new password with at least 8 characters.','error');render();return}
+  if(password!==confirm){setAuthNotice('The two new passwords do not match.','error');render();return}
+  setAuthNotice('Saving new password…','info');render();
+  const {error}=await db.auth.updateUser({password});
+  if(error){setAuthNotice(friendlyAuthError(error),'error');render();return}
+  try{await db.auth.signOut({scope:'local'})}catch{}
+  session=null;clearRemote();authRecoveryActive=false;authMode='login';authNeedsConfirmation=false;cleanAuthUrl();remoteStatus='ready';
+  setAuthNotice('Password changed successfully. Sign in with the new password.','success');render();
+}
+window.signOut=async()=>{stopRealtime();await db.auth.signOut();session=null;clearRemote();ui.demo=false;ui.siteMode='player';ui.adminPreview='none';saveUI();authMode='login';authNeedsConfirmation=false;setAuthNotice('');remoteStatus='ready';render()}
+
+
+window.setMailMode=mode=>{mailMode=mode==='sent'?'sent':'inbox';render()}
+window.openComposeMail=(replyId='')=>{
+  if(ui.demo||previewReadOnly())return;
+  const reply=mailMessages.find(m=>m.id===replyId);const other=otherGameEntity();if(!other)return;
+  const subject=reply?(/^re:/i.test(reply.subject)?reply.subject:`Re: ${reply.subject}`):'';
+  document.body.insertAdjacentHTML('beforeend',`<div class="modal-back" id="composeModal"><div class="modal mail-compose"><div class="eyebrow">FROM ${esc(currentEntity()?.name||'')}</div><h3>New BabyBat Mail</h3><p class="small-note">To ${esc(other.name)} · ${esc(mailAddressForEntity(other.id))}</p><div class="field"><label>Type</label><select id="mailCategory" class="input"><option value="message">Message</option><option value="directive">Directive</option><option value="submission">Submission</option><option value="scoring">Scoring</option><option value="ruling">Ruling</option><option value="reward">Reward</option></select></div><div class="field"><label>Subject</label><input id="mailSubject" class="input" value="${esc(subject)}" placeholder="Subject"></div><div class="field"><label>Message</label><textarea id="mailBody" class="input" rows="8" placeholder="Official game correspondence…"></textarea></div><div class="row"><button class="secondary" onclick="document.getElementById('composeModal')?.remove()">Cancel</button><button class="primary" onclick="sendMail('${esc(replyId)}')">Send to ${esc(other.name)}</button></div></div></div>`);
+}
+window.sendMail=async(replyId='')=>{
+  const subject=document.getElementById('mailSubject')?.value.trim()||'';const body=document.getElementById('mailBody')?.value.trim()||'';const category=document.getElementById('mailCategory')?.value||'message';
+  if(!subject||!body){toast('Subject and message are required');return}
+  const sender=currentEntity(),recipient=otherGameEntity();if(!sender||!recipient||!game)return;
+  const reply=mailMessages.find(m=>m.id===replyId);const id=crypto.randomUUID();
+  const payload={id,game_id:game.id,thread_id:reply?(reply.thread_id||reply.id):id,in_reply_to:reply?.id||null,sender_entity_id:sender.id,recipient_entity_id:recipient.id,sender_user_id:session.user.id,subject,body,category};
+  const {error}=await db.from('mail_messages').insert(payload);if(error){toast(error.message);return}
+  document.getElementById('composeModal')?.remove();await loadRemote({silent:true});mailMode='sent';ui.activePage='mail';saveUI();render();toast(`Sent to ${recipient.name}`)
+}
+window.openMail=async id=>{
+  const m=mailMessages.find(x=>x.id===id);if(!m)return;const incoming=m.recipient_entity_id===currentEntity()?.id;
+  if(incoming&&!m.recipient_read_at&&!ui.demo){await db.from('mail_messages').update({recipient_read_at:new Date().toISOString()}).eq('id',m.id);m.recipient_read_at=new Date().toISOString();}
+  document.body.insertAdjacentHTML('beforeend',`<div class="modal-back" id="mailModal"><div class="modal mail-view"><div class="eyebrow">${esc(m.category.toUpperCase())}</div><h3>${esc(m.subject)}</h3><div class="mail-from">${esc(entityName(m.sender_entity_id))} <span>${esc(mailAddressForEntity(m.sender_entity_id))}</span><br>to ${esc(entityName(m.recipient_entity_id))}</div><div class="mail-body">${esc(m.body).replace(/\n/g,'<br>')}</div><div class="row"><button class="secondary" onclick="document.getElementById('mailModal')?.remove()">Close</button>${incoming&&!previewReadOnly()?`<button class="primary" onclick="document.getElementById('mailModal')?.remove();openComposeMail('${esc(m.id)}')">Reply</button>`:''}</div></div></div>`);render();
+}
+window.issueDirective=async()=>{
+  if(previewReadOnly())return previewOnly();
+  const code=normalizeDirectiveCode(document.getElementById('newDirectiveCode')?.value||'');const title=document.getElementById('newDirectiveTitle')?.value.trim()||'';const body=document.getElementById('newDirectiveBody')?.value.trim()||'';
+  if(!code||!title||!body){toast('Code, title and Directive text are required');return}
+  const now=new Date().toISOString();const ins=await db.from('directives').insert({game_id:game.id,code,title,description:body,status:'issued',issued_by_user_id:session.user.id,issued_at:now}).select().single();if(ins.error){toast(ins.error.message);return}
+  const sender=currentEntity(),recipient=otherGameEntity();const mid=crypto.randomUUID();
+  const mail=await db.from('mail_messages').insert({id:mid,game_id:game.id,thread_id:mid,sender_entity_id:sender.id,recipient_entity_id:recipient.id,sender_user_id:session.user.id,subject:`${code} — ${title}`,body,category:'directive'});
+  if(mail.error){toast(`Directive created, but Mail failed: ${mail.error.message}`);await loadRemote({silent:true});return}
+  await loadRemote({silent:true});toast(`${code} issued to ${recipient.name}`)
+}
+window.openEvidenceSubmit=id=>{
+  const d=directives.find(x=>x.id===id);if(!d||previewReadOnly())return;
+  document.body.insertAdjacentHTML('beforeend',`<div class="modal-back" id="evidenceModal"><div class="modal evidence-submit"><div class="eyebrow">${esc(d.code||'DIRECTIVE')}</div><h3>Submit Photo Evidence</h3><p class="small-note">BabyBat compresses the photo before private upload. Real photographs only.</p><div class="field"><label>Photo</label><input id="evidenceFile" class="input file-input" type="file" accept="image/*"></div><div class="field"><label>Caption (optional)</label><textarea id="evidenceCaption" class="input" rows="3" placeholder="Anything Nocturne should know…"></textarea></div><div class="row"><button class="secondary" onclick="document.getElementById('evidenceModal')?.remove()">Cancel</button><button id="evidenceSubmitButton" class="primary" onclick="submitEvidence('${esc(id)}')">Submit to Nocturne</button></div></div></div>`)
+}
+async function imageElementFromFile(file){return await new Promise((resolve,reject)=>{const url=URL.createObjectURL(file);const img=new Image();img.onload=()=>{URL.revokeObjectURL(url);resolve(img)};img.onerror=()=>{URL.revokeObjectURL(url);reject(new Error('This image format could not be compressed in the browser.'))};img.src=url})}
+async function compressPhoto(file){
+  const maxEdge=Math.max(800,Math.min(4000,Number(setting('photo_max_long_edge',1800))||1800));const quality=Math.max(.5,Math.min(.95,Number(setting('photo_quality',.82))||.82));
+  try{const img=await imageElementFromFile(file);let w=img.naturalWidth,h=img.naturalHeight;const scale=Math.min(1,maxEdge/Math.max(w,h));w=Math.round(w*scale);h=Math.round(h*scale);const c=document.createElement('canvas');c.width=w;c.height=h;const ctx=c.getContext('2d',{alpha:false});ctx.drawImage(img,0,0,w,h);const blob=await new Promise((res,rej)=>c.toBlob(b=>b?res(b):rej(new Error('Could not compress image')),'image/jpeg',quality));return {blob,name:(file.name||'evidence').replace(/\.[^.]+$/,'')+'.jpg',mime:'image/jpeg'};}catch(err){if(file.size<=6*1024*1024)return {blob:file,name:file.name||'evidence.jpg',mime:file.type||'image/jpeg'};throw err;}
+}
+window.submitEvidence=async directiveId=>{
+  const file=document.getElementById('evidenceFile')?.files?.[0];const caption=document.getElementById('evidenceCaption')?.value.trim()||'';if(!file){toast('Choose a photo first');return}
+  const btn=document.getElementById('evidenceSubmitButton');if(btn){btn.disabled=true;btn.textContent='Preparing Photo…'}
+  try{const processed=await compressPhoto(file);if(processed.blob.size>6*1024*1024)throw new Error('Photo is still over 6 MB after compression.');const id=crypto.randomUUID();const sender=currentEntity(),recipient=otherGameEntity();const safe=processed.name.replace(/[^a-zA-Z0-9._-]/g,'_');const path=`${game.id}/${id}/${Date.now()}-${safe}`;const row={id,game_id:game.id,directive_id:directiveId,submitter_entity_id:sender.id,recipient_entity_id:recipient.id,submitted_by_user_id:session.user.id,storage_path:path,original_name:processed.name,mime_type:processed.mime,byte_size:processed.blob.size,caption};const ins=await db.from('evidence_submissions').insert(row);if(ins.error)throw ins.error;const up=await db.storage.from('game-evidence').upload(path,processed.blob,{contentType:processed.mime,upsert:false,cacheControl:'3600'});if(up.error){await db.from('evidence_submissions').delete().eq('id',id);throw up.error}document.getElementById('evidenceModal')?.remove();await loadRemote({silent:true});toast(`Photo submitted · ${humanBytes(processed.blob.size)}`)}catch(e){toast(e?.message||String(e));if(btn){btn.disabled=false;btn.textContent='Submit to Nocturne'}}
+}
+window.openEvidence=async id=>{
+  const e=evidenceSubmissions.find(x=>x.id===id);if(!e||e.deleted_at){toast('This photo is no longer stored in BabyBat');return}const signed=await db.storage.from('game-evidence').createSignedUrl(e.storage_path,600);if(signed.error){toast(signed.error.message);return}const recipient=e.recipient_entity_id===currentEntity()?.id;const d=directives.find(x=>x.id===e.directive_id);
+  document.body.insertAdjacentHTML('beforeend',`<div class="modal-back" id="photoModal"><div class="modal photo-view"><div class="eyebrow">${esc(d?.code||'EVIDENCE')}</div><h3>${esc(d?.title||'Photo Submission')}</h3><img src="${esc(signed.data.signedUrl)}" alt="Submitted evidence"><p>${esc(e.caption||'No caption')}</p><div class="photo-meta">${humanBytes(e.byte_size||0)} · ${fmtDate(e.created_at)} · ${esc(e.status)}</div><div class="row"><button class="secondary" onclick="document.getElementById('photoModal')?.remove()">Close</button>${recipient?`<button class="secondary" onclick="saveEvidencePhoto('${esc(e.id)}')">Save Photo</button>`:''}${recipient&&accountRole()==='game_master'?`<button class="primary" onclick="reviewEvidence('${esc(e.id)}','approved')">Approve</button><button class="danger" onclick="reviewEvidence('${esc(e.id)}','rejected')">Reject</button>`:''}</div></div></div>`)
+}
+window.saveEvidencePhoto=async id=>{
+  const e=evidenceSubmissions.find(x=>x.id===id);if(!e)return;const dl=await db.storage.from('game-evidence').download(e.storage_path);if(dl.error){toast(dl.error.message);return}const file=new File([dl.data],e.original_name||'babybat-photo.jpg',{type:e.mime_type||dl.data.type||'image/jpeg'});try{if(navigator.canShare?.({files:[file]})){await navigator.share({files:[file],title:'BabyBat Photo'});}else{const url=URL.createObjectURL(dl.data);const a=document.createElement('a');a.href=url;a.download=file.name;document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),5000)}}catch(err){if(err?.name==='AbortError')return;toast(err?.message||String(err));return}
+  const days=Math.max(1,Number(setting('photo_retention_days_after_save',14))||14);const auto=setting('photo_auto_delete_after_save',true)!==false;const now=new Date();const update={recipient_saved_at:now.toISOString(),delete_after:auto?new Date(now.getTime()+days*86400000).toISOString():null};const res=await db.from('evidence_submissions').update(update).eq('id',id);if(res.error){toast(res.error.message);return}await loadRemote({silent:true});toast(auto?`Saved · eligible for cleanup in ${days} days`:'Saved · BabyBat retention remains on')
+}
+window.reviewEvidence=async(id,status)=>{if(previewReadOnly())return previewOnly();const e=evidenceSubmissions.find(x=>x.id===id);if(!e)return;const note=status==='rejected'?prompt('Reason / resubmission note (optional):','')||'':'';const upd={status,reviewed_by_user_id:session.user.id,reviewed_at:new Date().toISOString(),review_note:note};const r=await db.from('evidence_submissions').update(upd).eq('id',id);if(r.error){toast(r.error.message);return}document.getElementById('photoModal')?.remove();await loadRemote({silent:true});toast(status==='approved'?'Submission approved':'Submission rejected')}
+window.saveGameBasics=async()=>{const name=document.getElementById('setGameName')?.value.trim();const reward_interval=Number(document.getElementById('setRewardInterval')?.value);if(!name||!Number.isFinite(reward_interval)||reward_interval<1){toast('Enter a valid name and reward interval');return}const r=await db.from('games').update({name,reward_interval,updated_at:new Date().toISOString()}).eq('id',game.id);if(r.error){toast(r.error.message);return}await loadRemote({silent:true});toast('Game settings saved')}
+async function saveSettings(values){const payload=Object.entries(values).map(([setting_key,setting_value])=>({game_id:game.id,setting_key,setting_value,updated_by_user_id:session.user.id,updated_at:new Date().toISOString()}));const r=await db.from('app_settings').upsert(payload,{onConflict:'game_id,setting_key'});if(r.error)throw r.error}
+window.savePhotoSettings=async()=>{try{await saveSettings({photo_max_long_edge:Number(document.getElementById('setPhotoEdge')?.value)||1800,photo_quality:Number(document.getElementById('setPhotoQuality')?.value)||.82,photo_retention_days_after_save:Number(document.getElementById('setPhotoRetention')?.value)||14,photo_auto_delete_after_save:!!document.getElementById('setPhotoAutoDelete')?.checked});await loadRemote({silent:true});toast('Photo settings saved')}catch(e){toast(e.message)}}
+window.saveMailSettings=async()=>{try{await saveSettings({sovereign_mail_address:document.getElementById('setSovMail')?.value.trim()||'chambers@sovereigncircle.org',nocturne_mail_address:document.getElementById('setNocMail')?.value.trim()||'nocturnecollective@nightshift.net',mail_enabled:!!document.getElementById('setMailEnabled')?.checked});await loadRemote({silent:true});toast('Mail settings saved')}catch(e){toast(e.message)}}
+window.saveIntegrationSettings=async()=>{try{await saveSettings({sms_enabled:!!document.getElementById('setSmsEnabled')?.checked});await loadRemote({silent:true});toast('Integration switches saved')}catch(e){toast(e.message)}}
+window.saveScoringRules=async()=>{const inputs=[...document.querySelectorAll('.score-admin-input')];try{for(const i of inputs){const v=Number(i.value);if(!Number.isFinite(v)||v===0)throw new Error('Scoring values must be non-zero numbers.');const r=await db.from('scoring_rules').update({points:v,updated_at:new Date().toISOString()}).eq('id',i.dataset.scoreId);if(r.error)throw r.error}await loadRemote({silent:true});toast('Scoring values saved')}catch(e){toast(e.message)}}
+window.purgeEligiblePhotos=async()=>{const now=new Date();const rows=evidenceSubmissions.filter(e=>!e.deleted_at&&e.delete_after&&new Date(e.delete_after)<=now);if(!rows.length){toast('No photos are eligible for cleanup');return}if(!confirm(`Permanently remove ${rows.length} eligible BabyBat photo${rows.length===1?'':'s'}? The game record remains.`))return;const rm=await db.storage.from('game-evidence').remove(rows.map(e=>e.storage_path));if(rm.error){toast(rm.error.message);return}const ids=rows.map(e=>e.id);const upd=await db.from('evidence_submissions').update({deleted_at:new Date().toISOString()}).in('id',ids);if(upd.error){toast(upd.error.message);return}await loadRemote({silent:true});toast(`${rows.length} photo${rows.length===1?'':'s'} removed from storage`)}
 
 window.askRedeem=id=>{const r=rewardRows().find(x=>x.id===id);if(!r)return;document.body.insertAdjacentHTML('beforeend',`<div class="modal-back" id="redeemModal"><div class="modal"><h3>Use ${esc(r.tier)} Reward?</h3><p>This removes it from the active Reward Chest but keeps it permanently in Redeemed Rewards. ${isGMView()?"Moxie's redemption clears the same shared reward from Shawn's chest.":''}</p><div class="row"><button class="secondary" onclick="closeModal()">Cancel</button><button class="primary" onclick="redeem('${r.id}')">Confirm Use</button></div></div></div>`)}
 window.closeModal=()=>document.getElementById('redeemModal')?.remove()
@@ -615,5 +999,5 @@ window.importBulkLedger=async()=>{
 }
 function toast(msg){document.querySelector('.toast')?.remove();const el=document.createElement('div');el.className='toast';el.textContent=msg;document.body.appendChild(el);setTimeout(()=>el.remove(),2400)}
 
-if('serviceWorker' in navigator)window.addEventListener('load',()=>navigator.serviceWorker.register('sw.js').catch(()=>{}));
+if('serviceWorker' in navigator)window.addEventListener('load',async()=>{try{const reg=await navigator.serviceWorker.register('sw.js',{updateViaCache:'none'});reg.update().catch(()=>{});}catch{}});
 boot();
