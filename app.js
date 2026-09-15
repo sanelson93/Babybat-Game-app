@@ -1,4 +1,4 @@
-const APP_VERSION = '3.1.3';
+const APP_VERSION = '3.1.4';
 const UI_STORAGE = 'babybat-game-hub-ui-v312';
 const CONFIG = window.BABYBAT_CONFIG;
 const { createClient } = window.supabase;
@@ -123,6 +123,10 @@ let counselHealth = 'unknown';
 let counselSending = false;
 let counselPendingText = '';
 let counselLastError = '';
+let aiUsage = null;
+let aiUsageLoading = false;
+let aiUsageError = '';
+let aiUsageAttempted = false;
 let mailMode = 'inbox';
 let realtimeChannel = null;
 let realtimeTimer = null;
@@ -650,6 +654,42 @@ function parseBulkLedger(text){
   return {rows,ignored};
 }
 
+function usageMoney(v){
+  const n=Number(v||0);
+  if(n>0&&n<0.01) return `$${n.toFixed(4)}`;
+  return `$${n.toFixed(2)}`;
+}
+function usageTokens(v){
+  const n=Number(v||0);
+  if(n>=1_000_000) return `${(n/1_000_000).toFixed(2)}M`;
+  if(n>=1_000) return `${(n/1_000).toFixed(1)}K`;
+  return String(Math.round(n));
+}
+function aiUsageSummary(){
+  const events=aiUsage?.events||[];
+  const entityMap=new Map((aiUsage?.entities||[]).map(e=>[e.id,e]));
+  const now=new Date();
+  const todayStart=new Date(now.getFullYear(),now.getMonth(),now.getDate());
+  const monthStart=new Date(now.getFullYear(),now.getMonth(),1);
+  const today=events.filter(e=>new Date(e.created_at)>=todayStart);
+  const month=events.filter(e=>new Date(e.created_at)>=monthStart);
+  const sum=(arr,key)=>arr.reduce((n,e)=>n+Number(e[key]||0),0);
+  const cost=arr=>sum(arr,'estimated_cost_usd');
+  const sideCost=slug=>cost(month.filter(e=>entityMap.get(e.entity_id)?.slug===slug));
+  return {
+    todayCost:cost(today),monthCost:cost(month),
+    sovereignCost:sideCost('sovereign-circle'),nocturneCost:sideCost('nocturne-collective'),
+    calls:month.length,avg:month.length?cost(month)/month.length:0,
+    input:sum(month,'input_tokens'),cached:sum(month,'cached_input_tokens'),
+    output:sum(month,'output_tokens'),reasoning:sum(month,'reasoning_tokens'),total:sum(month,'total_tokens')
+  };
+}
+function aiUsagePanel(){
+  const u=aiUsageSummary();
+  const state=aiUsageLoading?'SYNCING':aiUsageError?'ERROR':aiUsage?'LIVE':'WAITING';
+  return `<div class="card admin-panel ai-usage-panel"><div class="eyebrow">AI SPEND</div><h3>AI Usage Meter</h3><div class="diag-row"><span>BabyBat Counsel tracking</span><b class="${aiUsageError?'pending':'ok'}">${state}</b></div>${aiUsageError?`<div class="notice counsel-error">${esc(aiUsageError)}</div>`:''}<div class="ai-usage-grid"><div><strong>${usageMoney(u.todayCost)}</strong><span>today</span></div><div><strong>${usageMoney(u.monthCost)}</strong><span>this month</span></div><div><strong>${usageMoney(u.sovereignCost)}</strong><span>Sovereign</span></div><div><strong>${usageMoney(u.nocturneCost)}</strong><span>Nocturne</span></div><div><strong>${usageMoney(u.avg)}</strong><span>avg response</span></div><div><strong>${u.calls}</strong><span>responses</span></div></div><div class="ai-token-strip"><span><b>${usageTokens(u.input)}</b> input</span><span><b>${usageTokens(u.cached)}</b> cached</span><span><b>${usageTokens(u.output)}</b> output</span><span><b>${usageTokens(u.reasoning)}</b> reasoning</span></div><button class="secondary" ${aiUsageLoading?'disabled':''} onclick="refreshAiUsage(true)">${aiUsageLoading?'Syncing…':'Refresh Usage'}</button><p class="small-note ai-usage-note">Estimated BabyBat Counsel spend from OpenAI response token usage. OpenAI Platform billing is the authoritative total. Connection-test calls are not included.</p></div>`;
+}
+
 function adminControlCenter(){
   if(effectiveRole()!=='admin') return '';
   const auto=setting('photo_auto_delete_after_save',true)!==false;
@@ -659,7 +699,7 @@ function adminControlCenter(){
     <div class="card admin-panel"><div class="eyebrow">GAME MECHANICS</div><h3>Core Game</h3><div class="field"><label>Game Name</label><input id="setGameName" class="input" value="${esc(game?.name||'')}"></div><div class="field"><label>Reward Interval</label><input id="setRewardInterval" class="input" type="number" min="1" value="${Number(game?.reward_interval||200)}"></div><button class="primary" onclick="saveGameBasics()">Save Game Settings</button></div>
     <div class="card admin-panel"><div class="eyebrow">PHOTO STORAGE</div><h3>Evidence Retention</h3><div class="field"><label>Max Long Edge (px)</label><input id="setPhotoEdge" class="input" type="number" min="800" max="4000" value="${Number(setting('photo_max_long_edge',1800))}"></div><div class="field"><label>Compression Quality (0.50–0.95)</label><input id="setPhotoQuality" class="input" type="number" step="0.01" min="0.5" max="0.95" value="${Number(setting('photo_quality',0.82))}"></div><div class="field"><label>Delete Grace Period After Save (days)</label><input id="setPhotoRetention" class="input" type="number" min="1" max="365" value="${Number(setting('photo_retention_days_after_save',14))}"></div><label class="toggle-row"><input id="setPhotoAutoDelete" type="checkbox" ${auto?'checked':''}><span>Make saved photos eligible for auto-cleanup</span></label><button class="primary" onclick="savePhotoSettings()">Save Photo Settings</button></div>
     <div class="card admin-panel"><div class="eyebrow">MAIL</div><h3>Official Addresses</h3><div class="field"><label>Sovereign Circle</label><input id="setSovMail" class="input" value="${esc(setting('sovereign_mail_address','chambers@sovereigncircle.org'))}"></div><div class="field"><label>Nocturne Collective</label><input id="setNocMail" class="input" value="${esc(setting('nocturne_mail_address','nocturnecollective@nightshift.net'))}"></div><label class="toggle-row"><input id="setMailEnabled" type="checkbox" ${setting('mail_enabled',true)!==false?'checked':''}><span>Enable BabyBat Mail</span></label><button class="primary" onclick="saveMailSettings()">Save Mail Settings</button></div>
-    <div class="card admin-panel"><div class="eyebrow">AI COUNSEL</div><h3>Private Counsel Engine</h3><div class="diag-row"><span>OpenAI Responses API</span><b class="${counselHealth==='ready'?'ok':'pending'}">${counselHealth==='ready'?'READY':counselHealth==='needs_key'?'API KEY NEEDED':'CHECKING'}</b></div><label class="toggle-row"><input id="setCounselEnabled" type="checkbox" ${setting('counsel_enabled',true)!==false?'checked':''}><span>Enable Sovereign + Nocturne Counsel</span></label><div class="field"><label>Model</label><select id="setCounselModel" class="input"><option value="gpt-5.6-sol" ${setting('counsel_model','gpt-5.6-sol')==='gpt-5.6-sol'?'selected':''}>GPT-5.6 Sol — strongest</option><option value="gpt-5.6-terra" ${setting('counsel_model')==='gpt-5.6-terra'?'selected':''}>GPT-5.6 Terra — balanced</option><option value="gpt-5.6-luna" ${setting('counsel_model')==='gpt-5.6-luna'?'selected':''}>GPT-5.6 Luna — cheapest</option></select></div><div class="field"><label>Reasoning</label><select id="setCounselReasoning" class="input">${['none','low','medium','high','xhigh','max'].map(x=>`<option value="${x}" ${setting('counsel_reasoning_effort','medium')===x?'selected':''}>${x}</option>`).join('')}</select></div><div class="field"><label>Sovereign instruction supplement</label><textarea id="setSovCounselNotes" class="input" rows="3" placeholder="Optional owner notes…">${esc(setting('sovereign_counsel_notes',''))}</textarea></div><div class="field"><label>Nocturne instruction supplement</label><textarea id="setNocCounselNotes" class="input" rows="3" placeholder="Optional owner notes…">${esc(setting('nocturne_counsel_notes',''))}</textarea></div><button class="primary" onclick="saveCounselSettings()">Save Counsel Settings</button><button class="secondary" onclick="checkCounselHealth(true)">Test Counsel Connection</button></div><div class="card admin-panel"><div class="eyebrow">INTEGRATIONS</div><h3>Connection Status</h3><div class="diag-row"><span>In-app Counsel backend</span><b class="ok">DEPLOYED</b></div><div class="diag-row"><span>SMS provider</span><b class="pending">NOT CONFIGURED</b></div><label class="toggle-row"><input id="setSmsEnabled" type="checkbox" ${setting('sms_enabled',false)===true?'checked':''}><span>SMS master switch (takes effect after provider setup)</span></label><button class="secondary" onclick="saveIntegrationSettings()">Save Integration Switches</button></div>
+    <div class="card admin-panel"><div class="eyebrow">AI COUNSEL</div><h3>Private Counsel Engine</h3><div class="diag-row"><span>OpenAI Responses API</span><b class="${counselHealth==='ready'?'ok':'pending'}">${counselHealth==='ready'?'READY':counselHealth==='needs_key'?'API KEY NEEDED':'CHECKING'}</b></div><label class="toggle-row"><input id="setCounselEnabled" type="checkbox" ${setting('counsel_enabled',true)!==false?'checked':''}><span>Enable Sovereign + Nocturne Counsel</span></label><div class="field"><label>Model</label><select id="setCounselModel" class="input"><option value="gpt-5.6-sol" ${setting('counsel_model','gpt-5.6-sol')==='gpt-5.6-sol'?'selected':''}>GPT-5.6 Sol — strongest</option><option value="gpt-5.6-terra" ${setting('counsel_model')==='gpt-5.6-terra'?'selected':''}>GPT-5.6 Terra — balanced</option><option value="gpt-5.6-luna" ${setting('counsel_model')==='gpt-5.6-luna'?'selected':''}>GPT-5.6 Luna — cheapest</option></select></div><div class="field"><label>Reasoning</label><select id="setCounselReasoning" class="input">${['none','low','medium','high','xhigh','max'].map(x=>`<option value="${x}" ${setting('counsel_reasoning_effort','medium')===x?'selected':''}>${x}</option>`).join('')}</select></div><div class="field"><label>Sovereign instruction supplement</label><textarea id="setSovCounselNotes" class="input" rows="3" placeholder="Optional owner notes…">${esc(setting('sovereign_counsel_notes',''))}</textarea></div><div class="field"><label>Nocturne instruction supplement</label><textarea id="setNocCounselNotes" class="input" rows="3" placeholder="Optional owner notes…">${esc(setting('nocturne_counsel_notes',''))}</textarea></div><button class="primary" onclick="saveCounselSettings()">Save Counsel Settings</button><button class="secondary" onclick="checkCounselHealth(true)">Test Counsel Connection</button></div>${aiUsagePanel()}<div class="card admin-panel"><div class="eyebrow">INTEGRATIONS</div><h3>Connection Status</h3><div class="diag-row"><span>In-app Counsel backend</span><b class="ok">DEPLOYED</b></div><div class="diag-row"><span>SMS provider</span><b class="pending">NOT CONFIGURED</b></div><label class="toggle-row"><input id="setSmsEnabled" type="checkbox" ${setting('sms_enabled',false)===true?'checked':''}><span>SMS master switch (takes effect after provider setup)</span></label><button class="secondary" onclick="saveIntegrationSettings()">Save Integration Switches</button></div>
   </div></section>
   <section class="section"><div class="section-head"><h2>Storage Health</h2><span>${humanBytes(storageBytes())} stored</span></div><div class="card storage-health"><div><strong>${evidenceSubmissions.filter(e=>!e.deleted_at).length}</strong><span>photos in BabyBat</span></div><div><strong>${eligible}</strong><span>eligible for cleanup</span></div><div><strong>${humanBytes(storageBytes())}</strong><span>current evidence size</span></div></div><button class="danger full-btn" ${eligible?'':'disabled'} onclick="purgeEligiblePhotos()">Purge ${eligible} Eligible Photo${eligible===1?'':'s'}</button></section>
   <section class="section"><div class="section-head"><h2>Scoring Rules</h2><span>edit without redeploy</span></div><div class="admin-rule-list">${scoringRules.map(r=>`<div class="admin-rule-row"><span>${esc(r.label)}</span><input class="input score-admin-input" data-score-id="${esc(r.id)}" type="number" value="${Number(r.points)}"></div>`).join('')}</div><button class="primary full-btn" onclick="saveScoringRules()">Save Scoring Values</button></section>
@@ -703,6 +743,7 @@ function render(){
   }
   const pages={home,counsel:counselPage,mail:mailPage,book:rules,ledger:ledgerPage,org:organizationsPage,admin};
   root.innerHTML=siteModeSwitcher()+header()+(pages[ui.activePage]||home)()+nav();
+  if(ui.activePage==='admin'&&effectiveRole()==='admin'&&!ui.demo&&!aiUsageAttempted&&!aiUsageLoading){setTimeout(()=>refreshAiUsage(false),0)}
 }
 
 async function boot(){
@@ -757,7 +798,7 @@ async function boot(){
   if(session) await loadRemote(); else {remoteStatus='ready';render()}
 }
 
-function clearRemote(){game=null;membership=null;entities=[];organizationStatuses=[];organizationMembers=[];directives=[];pointTransactions=[];rewards=[];tiers=[];scoringRules=[];ruleSections=[];appSettings=[];mailMessages=[];evidenceSubmissions=[];notificationEvents=[];counselThread=null;counselMessages=[];counselHealth='unknown';counselLastError='';profile=null;stopRealtime()}
+function clearRemote(){game=null;membership=null;entities=[];organizationStatuses=[];organizationMembers=[];directives=[];pointTransactions=[];rewards=[];tiers=[];scoringRules=[];ruleSections=[];appSettings=[];mailMessages=[];evidenceSubmissions=[];notificationEvents=[];counselThread=null;counselMessages=[];counselHealth='unknown';counselLastError='';aiUsage=null;aiUsageLoading=false;aiUsageError='';aiUsageAttempted=false;profile=null;stopRealtime()}
 async function loadRemote({silent=false}={}){
   if(!session) return;
   if(!silent){remoteStatus='loading'; render();}
@@ -1027,6 +1068,20 @@ window.checkCounselHealth=async(showToast=false)=>{
   }catch(e){counselHealth='error';counselLastError=e?.message||String(e);if(showToast)toast(counselLastError)}
   render();
 }
+window.refreshAiUsage=async(showToast=false)=>{
+  if(ui.demo||effectiveRole()!=='admin'||aiUsageLoading)return;
+  aiUsageLoading=true;aiUsageError='';aiUsageAttempted=true;render();
+  try{
+    const {data,error}=await db.functions.invoke('babybat-ai-usage',{body:{action:'sync'}});
+    if(error)throw error;if(data?.error)throw new Error(data.error);
+    aiUsage=data||{events:[],entities:[]};
+    if(showToast)toast(data?.synced?`Usage synced · ${data.synced} response${data.synced===1?'':'s'} added`:'AI usage is up to date');
+  }catch(e){
+    aiUsageError=e?.message||String(e);
+    if(showToast)toast(aiUsageError);
+  }finally{aiUsageLoading=false;render()}
+}
+
 window.askCounsel=()=>{const el=document.getElementById('counselInput');const text=el?.value.trim()||'';if(!text){toast('Ask Counsel something first');return}sendCounselPrompt(text)}
 window.sendCounselPrompt=async(text,evidenceId='')=>{
   if(ui.demo||previewReadOnly()||counselSending)return;
@@ -1037,6 +1092,7 @@ window.sendCounselPrompt=async(text,evidenceId='')=>{
     const {data,error}=await db.functions.invoke('babybat-counsel',{body:{action:'chat',message:msg,...(evidenceId?{evidence_id:evidenceId}:{})}});
     if(error)throw error;
     if(data?.ok===false||data?.error)throw new Error(data?.error||'Counsel could not answer.');
+    if(data?.response_id){db.functions.invoke('babybat-ai-usage',{body:{action:'record',response_id:data.response_id}}).catch(()=>{})}
     counselPendingText='';counselSending=false;counselLastError='';await loadRemote({silent:true});ui.activePage='counsel';saveUI();render();requestAnimationFrame(scrollCounselBottom)
   }catch(e){
     counselSending=false;counselPendingText='';counselLastError=e?.message||String(e);
