@@ -1,5 +1,5 @@
-const APP_VERSION = '3.1.0';
-const UI_STORAGE = 'babybat-game-hub-ui-v31';
+const APP_VERSION = '3.1.2';
+const UI_STORAGE = 'babybat-game-hub-ui-v312';
 const CONFIG = window.BABYBAT_CONFIG;
 const { createClient } = window.supabase;
 const db = createClient(CONFIG.supabaseUrl, CONFIG.supabasePublishableKey, {
@@ -38,7 +38,7 @@ const DEMO = {
     ['sovereign-circle','Sir','Brat Tamer','Discipline & Dynamics','Chief Brat Tamer','sc-sir.webp',20],
     ['sovereign-circle','Saint','Caregiver','Care & Welfare','Chief Caretaker','sc-saint.webp',30],
     ['sovereign-circle','Sphinx','Strategist','Strategy & Voice','Chief Strategist','sc-sphinx.webp',40],
-    ['sovereign-circle','Silk','Connection','Warmth & Connection','Director of Connection',null,50],
+    ['sovereign-circle','Silk','Connection','Warmth & Connection','Director of Connection','sc-silk.webp',50],
     ['sovereign-circle','Sinister','Corruption & Punishment','Chaos & Consequences','Director of Chaos & Consequences','sc-sinister.webp',60],
     ['sovereign-circle','Scales','Rules & Interpretation','Oversight, Compliance & Legal Strategy','Chief of Rules & Interpretation','sc-scales.webp',70],
     ['sovereign-circle','Sigma','Findom','Finance','Chief Financial Officer','sc-sigma.webp',80],
@@ -250,6 +250,9 @@ function crest(theme=viewTheme()){
   const img=theme==='nocturne'?'nocturne-collective-logo.webp':'sovereign-circle-logo.webp';
   return `<div class="crest crest-${theme}"><img src="${img}" alt="" /></div>`;
 }
+function appLogo(extra=''){
+  return `<div class="babybat-logo ${extra}"><img src="babybat-logo.webp" alt="BabyBat"></div>`;
+}
 function siteModeSwitcher(){
   if(!isAdminAccount()) return '';
   const adminLabel=ui.siteMode==='admin' && ui.adminPreview==='moxie' ? 'Admin Home' : 'Admin';
@@ -259,7 +262,7 @@ function header(){
   const r=effectiveRole();
   const consoleName=r==='game_master'?'Nocturne Console':r==='admin'?'Site Administration':'Sovereign Console';
   const live=ui.demo?'Demo':'Live';
-  return `<header class="topbar theme-${viewTheme()}"><div class="brand">${crest()}<div><div class="eyebrow">BabyBat Game Hub · ${live}</div><h1>${consoleName}</h1></div></div><div class="role-pill">${esc(personLabel())} · ${roleLabel()}</div></header>`;
+  return `<header class="topbar theme-${viewTheme()}"><div class="brand">${appLogo('header-logo')}<div><div class="eyebrow">BabyBat Game Hub · ${live}</div><h1>${consoleName}</h1></div></div><div class="role-pill">${esc(personLabel())} · ${roleLabel()}</div></header>`;
 }
 function nav(){
   const lastLabel=effectiveRole()==='game_master'?'Score':(isAdminAccount()&&ui.siteMode==='player'?'Profile':'Admin');
@@ -309,7 +312,7 @@ function home(){
   <section class="section presence-section"><div class="section-head"><h2>Game Status</h2><span>organization availability</span></div>${organizationPresence()}</section>
   ${gameDesk()}
   <section class="section"><div class="grid2"><div class="mini"><strong>${led.length}</strong><span>Scored directives</span></div><div class="mini"><strong>${available.length}</strong><span>Rewards ready</span></div></div></section>
-  ${moxie?`<section class="section"><div class="section-head"><h2>Game Master</h2><span>simple workflow</span></div><div class="gm-next-step"><div><span class="eyebrow">NEXT ACTION</span><h3>Score a Directive</h3><p>Paste Moxie's completed scoring ledger, preview it, then import it.</p></div><button class="primary" onclick="go('admin')">Paste Ledger</button></div><button class="ledger-link" onclick="go('ledger')"><span>Review scoring history</span><b>View Ledger ›</b></button></section>`:''}
+  ${moxie?`<section class="section"><div class="section-head"><h2>Game Master</h2><span>simple workflow</span></div><div class="gm-next-step"><div><span class="eyebrow">NEXT ACTION</span><h3>Score a Directive</h3><p>Enter the Directive number, tap the scoring awards that apply, and post the ledger.</p></div><button class="primary" onclick="go('admin')">Build Ledger</button></div><button class="ledger-link" onclick="go('ledger')"><span>Review scoring history</span><b>View Ledger ›</b></button></section>`:''}
   <section class="section"><div class="section-head"><h2>Reward Chest</h2><span>${available.length} available</span></div>${rewardChest(available,p,moxie)}</section>
   <section class="section"><div class="section-head"><h2>Organizations</h2><span>Meet the boards</span></div>${organizationTeasers()}</section>
   <section class="section"><div class="section-head"><h2>Recent Activity</h2><span>Permanent ledger</span></div>${led.slice().reverse().slice(0,4).map(activity).join('')}</section></main>`;
@@ -474,8 +477,9 @@ function admin(){
   const moxiePreview=isMoxie && previewReadOnly();
   const heading=r==='admin'?'Site Administration':isMoxie?(moxiePreview?'Moxie Preview':'Moxie Scoring Console'):'Administration';
   const sub=r==='admin'?'full access':isMoxie?(moxiePreview?'Game Master layout · read-only QA':'Nocturne Game Master'):'Sovereign access';
-  const scoringIntro=gm?`<div class="gm-workflow ${isMoxie?'nocturne':''}"><div class="workflow-step active"><b>1</b><span>Paste ledger</span></div><i>›</i><div class="workflow-step"><b>2</b><span>Preview</span></div><i>›</i><div class="workflow-step"><b>3</b><span>Import</span></div></div>`:'';
-  return `<main class="page"><section class="section" style="margin-top:4px"><div class="section-head"><h2>${heading}</h2><span>${sub}</span></div>${moxiePreview?`<div class="preview-context"><span>Moxie layout preview</span><button onclick="setSiteMode('admin')">Back to Admin Home</button></div>`:''}${scoringIntro}${isMoxie&&!moxiePreview?directiveIssuerCard():''}${gm?bulkLedgerForm():`<div class="card"><h3 style="margin-top:0">Permission Model</h3><p class="small-note">Your current game role is <strong>${roleLabel()}</strong>. Players can view the ledger and use unlocked rewards. Game Master/Admin roles can import official scoring ledgers.</p></div>`}${playerUpgrade?adminUpgradeCard():''}</section>
+  const scoringIntro=gm?(isMoxie?`<div class="gm-workflow nocturne"><div class="workflow-step active"><b>1</b><span>Directive #</span></div><i>›</i><div class="workflow-step"><b>2</b><span>Tap awards</span></div><i>›</i><div class="workflow-step"><b>3</b><span>Post ledger</span></div></div>`:`<div class="gm-workflow"><div class="workflow-step active"><b>1</b><span>Paste ledger</span></div><i>›</i><div class="workflow-step"><b>2</b><span>Preview</span></div><i>›</i><div class="workflow-step"><b>3</b><span>Import</span></div></div>`):'';
+  const scoringTool=isMoxie?scoreBuilderForm():bulkLedgerForm();
+  return `<main class="page"><section class="section" style="margin-top:4px"><div class="section-head"><h2>${heading}</h2><span>${sub}</span></div>${moxiePreview?`<div class="preview-context"><span>Moxie layout preview</span><button onclick="setSiteMode('admin')">Back to Admin Home</button></div>`:''}${scoringIntro}${isMoxie&&!moxiePreview?directiveIssuerCard():''}${gm?scoringTool:`<div class="card"><h3 style="margin-top:0">Permission Model</h3><p class="small-note">Your current game role is <strong>${roleLabel()}</strong>. Players can view the ledger and use unlocked rewards. Game Master/Admin roles can post official scoring ledgers.</p></div>`}${playerUpgrade?adminUpgradeCard():''}</section>
   <section class="section"><div class="section-head"><h2>${isMoxie?'Reward Chest':'Reward Control'}</h2><span>${isMoxie?'shared with Shawn':'shared object'}</span></div>${adminRewards(rr)}</section>
   ${r==='admin'?adminControlCenter()+`<section class="section"><div class="section-head"><h2>Experience QA</h2><span>admin tools</span></div><div class="card"><p class="small-note">Player Mode is your real Shawn profile. Use Preview Moxie from the Admin Home only when you need to inspect her interface.</p></div></section>`:''}
   ${ui.demo?`<section class="section"><div class="card"><button class="secondary" onclick="toggleDemoViewer()">Preview ${ui.demoViewer==='moxie'?'Shawn / Player':'Moxie / Game Master'}</button><button class="danger" style="margin-left:8px" onclick="leaveDemo()">Exit Demo</button></div></section>`:`<section class="section account-section"><div class="section-head"><h2>Account</h2><span>live sync</span></div><div class="card account-card"><p class="small-note">${esc(session?.user?.email||'')}<br>${roleLabel(accountRole())} · Supabase connected</p><div class="row"><button class="secondary" onclick="syncNow()">Sync</button><button class="danger" onclick="signOut()">Sign Out</button></div><button class="account-reset" onclick="emailPasswordReset()">Email Password Reset</button></div></section>`}</main>`;
@@ -484,6 +488,16 @@ function adminUpgradeCard(){return `<div class="card admin-upgrade"><div class="
 
 function directiveIssuerCard(){
   return `<div class="card directive-issuer"><div class="bulk-title"><div><div class="eyebrow">Nocturne Desk</div><h3>Issue Directive</h3></div><span class="badge">NEW</span></div><p class="small-note">Create the official Directive and deliver it to Sovereign Circle through BabyBat Mail in one step.</p><div class="form-grid"><div class="field"><label>Directive Code</label><input id="newDirectiveCode" class="input" placeholder="SD-004"></div><div class="field"><label>Title</label><input id="newDirectiveTitle" class="input" placeholder="Directive title"></div><div class="field"><label>Directive Text</label><textarea id="newDirectiveBody" class="input" rows="4" placeholder="Requirements, deadline, evidence rules…"></textarea></div><button class="primary" onclick="issueDirective()">Issue + Send to Sovereign</button></div></div>`;
+}
+
+function scoreBuilderForm(){
+  const rules=scoreRows();
+  const awards=rules.filter(r=>Number(r.points)>=0);
+  const penalties=rules.filter(r=>Number(r.points)<0);
+  const recent=directives.slice().sort((a,b)=>String(b.created_at||b.issued_at||'').localeCompare(String(a.created_at||a.issued_at||''))).slice(0,5);
+  const disabled=previewReadOnly()?'disabled':'';
+  const ruleButton=r=>`<label class="score-pick ${Number(r.points)<0?'penalty':''}"><input type="checkbox" class="score-rule-check" data-label="${esc(r.label)}" data-points="${Number(r.points)||0}" ${disabled} onchange="updateScoreBuilderTotal()"><span><b>${esc(r.label)}</b>${r.definition?`<small>${esc(r.definition)}</small>`:''}</span><strong class="points ${Number(r.points)<0?'negative':''}">${Number(r.points)>0?'+':''}${Number(r.points)}</strong></label>`;
+  return `<div class="card score-builder ${effectiveRole()==='game_master'?'nocturne':''}"><div class="bulk-title"><div><div class="eyebrow">Official Scoring</div><h3>Build Ledger</h3></div><span class="badge">TAP</span></div><p class="small-note">Type the Directive number, check what applies, then post it. BabyBat handles the math and permanent ledger entries.</p>${previewReadOnly()?`<div class="notice">Preview only — this is exactly what Moxie sees, but Admin QA cannot post from preview mode.</div>`:''}<div class="field"><label>Directive Number</label><div class="directive-number-row"><span>SD-</span><input id="scoreDirectiveNumber" class="input" type="number" inputmode="numeric" min="1" max="9999" ${disabled} placeholder="004"></div>${recent.length?`<div class="directive-quick-picks">${recent.map(d=>{const m=String(d.code||'').match(/(\d{1,4})/);return m?`<button type="button" ${disabled} onclick="pickScoreDirective('${String(Number(m[1])).padStart(3,'0')}')">${esc(d.code)}</button>`:''}).join('')}</div>`:''}</div><div class="score-builder-section"><div class="score-builder-section-head"><b>Awards & Bonuses</b><span>tap everything that applies</span></div><div class="score-pick-grid">${awards.map(ruleButton).join('')}</div></div>${penalties.length?`<div class="score-builder-section"><div class="score-builder-section-head"><b>Penalties</b><span>only when applicable</span></div><div class="score-pick-grid">${penalties.map(ruleButton).join('')}</div></div>`:''}<div class="field score-note"><label>Scoring Note <span>(optional)</span></label><textarea id="scoreBuilderNote" class="input" rows="2" ${disabled} placeholder="Why this score was awarded…"></textarea></div><div class="score-builder-footer"><div class="score-builder-total"><span>Selected</span><strong id="scoreBuilderCount">0</strong></div><div class="score-builder-total"><span>Ledger Total</span><strong id="scoreBuilderTotal">+0</strong></div><button id="postScoreBuilder" class="primary" ${disabled} onclick="${previewReadOnly()?'previewOnly()':'postScoreBuilder()'}">Post Ledger</button></div></div>`;
 }
 
 function bulkLedgerForm(){
@@ -651,18 +665,18 @@ function adminControlCenter(){
 
 function adminRewards(rr){const av=rr.filter(r=>r.status==='available');if(!av.length)return `<div class="empty">No available rewards to redeem.</div>`;return av.map(r=>`<div class="card reward-card"><div class="reward-icon">◆</div><div class="reward-main"><h3>${esc(r.tier)} Reward</h3><p>Milestone ${r.milestone}</p></div>${canRedeemView()?`<button class="use-btn" ${previewReadOnly()?'disabled':''} onclick="${previewReadOnly()?'previewOnly()':`askRedeem('${r.id}')`}">${isGMView()?"USE SHAWN'S":'USE'}</button>`:''}</div>`).join('')}
 
-function loadingScreen(){return `<main class="auth-wrap"><div class="auth-card">${crest('sovereign')}<div class="eyebrow">BabyBat Game Hub</div><h1>Opening the vault…</h1><div class="loader"></div><p class="small-note">BABYBAT v${APP_VERSION}</p></div></main>`}
+function loadingScreen(){return `<main class="auth-wrap"><div class="auth-card">${appLogo('auth-logo')}<div class="eyebrow auth-eyebrow">BabyBat Game Hub</div><h1>Opening the vault…</h1><div class="loader"></div><p class="small-note">BABYBAT v${APP_VERSION}</p></div></main>`}
 function loginScreen(){
-  return `<main class="auth-wrap"><div class="auth-card">${crest('sovereign')}<div class="eyebrow">BabyBat Game Hub</div><h1>Enter the Game</h1><p class="auth-copy">Sign in to your existing BabyBat account.</p>${authNoticeHtml()}<div class="form-grid auth-form"><div class="field"><label>Email</label><input id="authEmail" class="input" type="email" autocomplete="email" autocapitalize="none" spellcheck="false" value="${esc(authDraft.email)}" placeholder="you@example.com"></div>${passwordField('authPassword','Password','current-password')}<button class="primary" onclick="signIn()">Sign In</button><button class="auth-link" onclick="openForgotPassword()">Forgot Password?</button>${authNeedsConfirmation&&authDraft.email?`<button class="secondary" onclick="resendConfirmation()">Resend Confirmation Email</button>`:''}<div class="auth-divider"><span>or</span></div><button class="secondary" onclick="openSignUp()">Create Account</button><button class="ghost" onclick="enterDemo()">Explore Demo</button></div><p class="small-note auth-foot">Accounts only receive the role tied to their one-time access code. Shawn and Moxie stay isolated to their own views.</p><div class="auth-version">BABYBAT v${APP_VERSION}</div></div></main>`;
+  return `<main class="auth-wrap"><div class="auth-card">${appLogo('auth-logo')}<div class="eyebrow auth-eyebrow">BabyBat Game Hub</div><h1>Enter the Game</h1><p class="auth-copy">Sign in to your existing BabyBat account.</p>${authNoticeHtml()}<div class="form-grid auth-form"><div class="field"><label>Email</label><input id="authEmail" class="input" type="email" autocomplete="email" autocapitalize="none" spellcheck="false" value="${esc(authDraft.email)}" placeholder="you@example.com"></div>${passwordField('authPassword','Password','current-password')}<button class="primary" onclick="signIn()">Sign In</button><button class="auth-link" onclick="openForgotPassword()">Forgot Password?</button>${authNeedsConfirmation&&authDraft.email?`<button class="secondary" onclick="resendConfirmation()">Resend Confirmation Email</button>`:''}<div class="auth-divider"><span>or</span></div><button class="secondary" onclick="openSignUp()">Create Account</button><button class="ghost" onclick="enterDemo()">Explore Demo</button></div><p class="small-note auth-foot">Accounts only receive the role tied to their one-time access code. Shawn and Moxie stay isolated to their own views.</p><div class="auth-version">BABYBAT v${APP_VERSION}</div></div></main>`;
 }
 function signupScreen(){
-  return `<main class="auth-wrap"><div class="auth-card">${crest('sovereign')}<div class="eyebrow">New Account</div><h1>Create BabyBat Login</h1><p class="auth-copy">Create the account first. After email confirmation, enter the one-time role code.</p>${authNoticeHtml()}<div class="form-grid auth-form"><div class="field"><label>Display Name</label><input id="authName" class="input" autocomplete="name" value="${esc(authDraft.name)}" placeholder="Shawn or Moxie"></div><div class="field"><label>Email</label><input id="authEmail" class="input" type="email" autocomplete="email" autocapitalize="none" spellcheck="false" value="${esc(authDraft.email)}" placeholder="you@example.com"></div>${passwordField('authPassword','Password','new-password')}${passwordField('authPasswordConfirm','Confirm Password','new-password')}<button class="primary" onclick="signUp()">Create Account</button><button class="auth-link" onclick="openLogin()">Back to Sign In</button></div><div class="auth-version">BABYBAT v${APP_VERSION}</div></div></main>`;
+  return `<main class="auth-wrap"><div class="auth-card">${appLogo('auth-logo')}<div class="eyebrow auth-eyebrow">New Account</div><h1>Create BabyBat Login</h1><p class="auth-copy">Create the account first. After email confirmation, enter the one-time role code.</p>${authNoticeHtml()}<div class="form-grid auth-form"><div class="field"><label>Display Name</label><input id="authName" class="input" autocomplete="name" value="${esc(authDraft.name)}" placeholder="Shawn or Moxie"></div><div class="field"><label>Email</label><input id="authEmail" class="input" type="email" autocomplete="email" autocapitalize="none" spellcheck="false" value="${esc(authDraft.email)}" placeholder="you@example.com"></div>${passwordField('authPassword','Password','new-password')}${passwordField('authPasswordConfirm','Confirm Password','new-password')}<button class="primary" onclick="signUp()">Create Account</button><button class="auth-link" onclick="openLogin()">Back to Sign In</button></div><div class="auth-version">BABYBAT v${APP_VERSION}</div></div></main>`;
 }
 function forgotPasswordScreen(){
-  return `<main class="auth-wrap"><div class="auth-card">${crest('sovereign')}<div class="eyebrow">Account Recovery</div><h1>Reset Password</h1><p class="auth-copy">Enter the account email. BabyBat will send a secure Supabase recovery link back to this app.</p>${authNoticeHtml()}<div class="form-grid auth-form"><div class="field"><label>Email</label><input id="authEmail" class="input" type="email" autocomplete="email" autocapitalize="none" spellcheck="false" value="${esc(authDraft.email)}" placeholder="you@example.com"></div><button class="primary" onclick="sendPasswordReset()">Send Reset Email</button><button class="auth-link" onclick="openLogin()">Back to Sign In</button></div><p class="small-note auth-foot">If the email exists, use the newest reset email. Recovery links expire and are intended for one use.</p><div class="auth-version">BABYBAT v${APP_VERSION}</div></div></main>`;
+  return `<main class="auth-wrap"><div class="auth-card">${appLogo('auth-logo')}<div class="eyebrow auth-eyebrow">Account Recovery</div><h1>Reset Password</h1><p class="auth-copy">Enter the account email. BabyBat will send a secure Supabase recovery link back to this app.</p>${authNoticeHtml()}<div class="form-grid auth-form"><div class="field"><label>Email</label><input id="authEmail" class="input" type="email" autocomplete="email" autocapitalize="none" spellcheck="false" value="${esc(authDraft.email)}" placeholder="you@example.com"></div><button class="primary" onclick="sendPasswordReset()">Send Reset Email</button><button class="auth-link" onclick="openLogin()">Back to Sign In</button></div><p class="small-note auth-foot">If the email exists, use the newest reset email. Recovery links expire and are intended for one use.</p><div class="auth-version">BABYBAT v${APP_VERSION}</div></div></main>`;
 }
 function resetPasswordScreen(){
-  return `<main class="auth-wrap"><div class="auth-card">${crest('sovereign')}<div class="eyebrow">Secure Recovery</div><h1>Choose New Password</h1><p class="auth-copy">This recovery link is authenticated. Set a new password, then BabyBat will return you to a fresh sign-in.</p>${authNoticeHtml()}<div class="form-grid auth-form">${passwordField('newPassword','New Password','new-password')}${passwordField('newPasswordConfirm','Confirm New Password','new-password')}<button class="primary" onclick="finishPasswordReset()">Save New Password</button><button class="auth-link" onclick="cancelRecovery()">Cancel and Return to Sign In</button></div><div class="auth-version">BABYBAT v${APP_VERSION}</div></div></main>`;
+  return `<main class="auth-wrap"><div class="auth-card">${appLogo('auth-logo')}<div class="eyebrow auth-eyebrow">Secure Recovery</div><h1>Choose New Password</h1><p class="auth-copy">This recovery link is authenticated. Set a new password, then BabyBat will return you to a fresh sign-in.</p>${authNoticeHtml()}<div class="form-grid auth-form">${passwordField('newPassword','New Password','new-password')}${passwordField('newPasswordConfirm','Confirm New Password','new-password')}<button class="primary" onclick="finishPasswordReset()">Save New Password</button><button class="auth-link" onclick="cancelRecovery()">Cancel and Return to Sign In</button></div><div class="auth-version">BABYBAT v${APP_VERSION}</div></div></main>`;
 }
 function authScreen(){
   if(authMode==='signup') return signupScreen();
@@ -670,9 +684,9 @@ function authScreen(){
   return loginScreen();
 }
 function pendingScreen(){
-  return `<main class="auth-wrap"><div class="auth-card">${crest('sovereign')}<div class="eyebrow">Account Ready</div><h1>Unlock Game Access</h1><p class="auth-copy">Enter the one-time code for your assigned role. The role is applied only to this signed-in account.</p><div class="field"><label>One-Time Access Code</label><input id="accessCode" class="input" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="SC-… or NC-…"></div><div class="form-grid" style="margin-top:10px"><button id="claimButton" class="primary" onclick="claimAccess()">Unlock My Role</button><button class="secondary" onclick="enterDemo()">Preview the Game</button><button class="danger" onclick="signOut()">Sign Out</button></div><div class="card id-card"><span>Signed in as</span><strong>${esc(session?.user?.email||'')}</strong><span>Access ID</span><code>${esc(session?.user?.id||'')}</code></div><div class="auth-version">BABYBAT v${APP_VERSION}</div></div></main>`;
+  return `<main class="auth-wrap"><div class="auth-card">${appLogo('auth-logo')}<div class="eyebrow auth-eyebrow">Account Ready</div><h1>Unlock Game Access</h1><p class="auth-copy">Enter the one-time code for your assigned role. The role is applied only to this signed-in account.</p><div class="field"><label>One-Time Access Code</label><input id="accessCode" class="input" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="SC-… or NC-…"></div><div class="form-grid" style="margin-top:10px"><button id="claimButton" class="primary" onclick="claimAccess()">Unlock My Role</button><button class="secondary" onclick="enterDemo()">Preview the Game</button><button class="danger" onclick="signOut()">Sign Out</button></div><div class="card id-card"><span>Signed in as</span><strong>${esc(session?.user?.email||'')}</strong><span>Access ID</span><code>${esc(session?.user?.id||'')}</code></div><div class="auth-version">BABYBAT v${APP_VERSION}</div></div></main>`;
 }
-function errorScreen(){return `<main class="auth-wrap"><div class="auth-card">${crest('sovereign')}<div class="eyebrow">Connection issue</div><h1>Vault didn't open</h1><div class="notice">${esc(remoteError||'Unknown error')}</div><div class="form-grid"><button class="primary" onclick="syncNow()">Try Again</button><button class="secondary" onclick="enterDemo()">Open Demo</button><button class="danger" onclick="signOut()">Sign Out</button></div><div class="auth-version">BABYBAT v${APP_VERSION}</div></div></main>`}
+function errorScreen(){return `<main class="auth-wrap"><div class="auth-card">${appLogo('auth-logo')}<div class="eyebrow auth-eyebrow">Connection issue</div><h1>Vault didn't open</h1><div class="notice">${esc(remoteError||'Unknown error')}</div><div class="form-grid"><button class="primary" onclick="syncNow()">Try Again</button><button class="secondary" onclick="enterDemo()">Open Demo</button><button class="danger" onclick="signOut()">Sign Out</button></div><div class="auth-version">BABYBAT v${APP_VERSION}</div></div></main>`}
 
 function render(){
   const root=document.getElementById('app');
@@ -1027,6 +1041,49 @@ window.redeem=async id=>{
   const {error}=await db.from('rewards').update({status:'used'}).eq('id',id).eq('status','available');
   if(error){toast(error.message);return}closeModal();await loadRemote();toast('Reward moved to redeemed history')
 }
+window.updateScoreBuilderTotal=()=>{
+  const checked=[...document.querySelectorAll('.score-rule-check:checked')];
+  const total=checked.reduce((sum,el)=>sum+Number(el.dataset.points||0),0);
+  const count=document.getElementById('scoreBuilderCount');
+  const totalEl=document.getElementById('scoreBuilderTotal');
+  if(count) count.textContent=String(checked.length);
+  if(totalEl){totalEl.textContent=`${total>0?'+':''}${total}`;totalEl.classList.toggle('negative',total<0)}
+}
+window.pickScoreDirective=num=>{const el=document.getElementById('scoreDirectiveNumber');if(el){el.value=String(Number(num));el.focus()}}
+window.postScoreBuilder=async()=>{
+  if(ui.demo){toast('Demo scoring does not alter the live database');return}
+  if(previewReadOnly()){previewOnly();return}
+  if(accountRole()!=='game_master'){toast('Nocturne Game Master permission required');return}
+  const raw=String(document.getElementById('scoreDirectiveNumber')?.value||'').trim();
+  const n=Number(raw);
+  if(!Number.isInteger(n)||n<1||n>9999){toast('Enter a valid Directive number');return}
+  const code=`SD-${String(n).padStart(3,'0')}`;
+  const directive=directives.find(d=>(normalizeDirectiveCode(d.code)||String(d.code).toUpperCase())===code);
+  if(!directive){toast(`${code} is not in BabyBat yet`);return}
+  const selected=[...document.querySelectorAll('.score-rule-check:checked')].map(el=>({category:String(el.dataset.label||'').trim(),points:Number(el.dataset.points||0)})).filter(x=>x.category&&Number.isFinite(x.points));
+  if(!selected.length){toast('Choose at least one scoring item');return}
+  const existing=existingLedgerSignatures();
+  const fresh=selected.filter(x=>!existing.has(`${code}|${x.category.toLowerCase()}|${x.points}`));
+  const duplicates=selected.length-fresh.length;
+  if(!fresh.length){toast('Those scoring items are already posted for this Directive');return}
+  if(duplicates&&!confirm(`${duplicates} selected scoring item${duplicates===1?' is':'s are'} already in ${code}. Skip ${duplicates===1?'it':'them'} and post the rest?`))return;
+  const note=String(document.getElementById('scoreBuilderNote')?.value||'').trim();
+  const totalPts=fresh.reduce((sum,x)=>sum+x.points,0);
+  if(!confirm(`Post ${fresh.length} ledger item${fresh.length===1?'':'s'} to ${code} for ${totalPts>0?'+':''}${totalPts} points?`))return;
+  const btn=document.getElementById('postScoreBuilder');if(btn){btn.disabled=true;btn.textContent='Posting…'}
+  try{
+    const reason=note||`Official ${code} scoring ledger.`;
+    const payload=fresh.map(x=>({game_id:game.id,directive_id:directive.id,points:x.points,category:x.category,reason,source:'game_master',awarded_by_user_id:session.user.id}));
+    const tx=await db.from('point_transactions').insert(payload);
+    if(tx.error) throw tx.error;
+    const now=new Date().toISOString();
+    const up=await db.from('directives').update({status:'scored',completed_at:directive.completed_at||now,updated_at:now}).eq('id',directive.id);
+    if(up.error) throw up.error;
+    await loadRemote();
+    toast(`${code} posted · ${totalPts>0?'+':''}${totalPts} points`);
+  }catch(e){toast(e?.message||String(e));if(btn){btn.disabled=false;btn.textContent='Post Ledger'}}
+}
+
 window.previewBulkLedger=()=>{
   if(ui.demo){toast('Demo paste preview is available, but imports stay disabled');}
   const text=document.getElementById('bulkLedgerText')?.value||'';

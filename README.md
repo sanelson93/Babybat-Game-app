@@ -1,4 +1,22 @@
-# BabyBat Game Hub v3.1.0 — Private Counsel
+# BabyBat Game Hub v3.1.2
+
+## Brand / profile refresh
+- Uses the new official BabyBat silver / black / purple crest as the shared game logo.
+- Login, signup, password recovery, access-code, and loading screens now use the BabyBat visual identity.
+- PWA manifest now has BabyBat 192px / 512px app icons.
+- Existing screen layouts and navigation are preserved; this release changes the visual styling rather than replacing the UX.
+- Moxie / Nocturne views keep the same controls but use richer purple + silver styling.
+- Shawn / Sovereign views keep the same controls but use green + silver Sovereign accents layered on the shared BabyBat shell.
+- Site Admin stays Sovereign-themed instead of drifting into unrelated gold styling.
+- Silk's new image is included as `sc-silk.webp`; the live BabyBat roster now points Silk to this asset.
+- Includes all v3.1.1 features, including private Counsel and Moxie's tap-to-build scoring ledger.
+
+## v3.1.1 scoring UX
+- Moxie Score now uses a directive-number + checkbox/button ledger builder.
+- Live total math and duplicate protection are automatic.
+- Post Ledger writes the selected scoring rules directly to the permanent point ledger and marks the directive scored.
+- Shawn Site Admin retains the advanced bulk paste importer for maintenance/backfill.
+
 
 V3.1 adds the first real OpenAI-powered Counsel layer directly inside BabyBat while preserving the V3 game hub, Mail, evidence, status, scoring, rewards, and Site Admin controls.
 

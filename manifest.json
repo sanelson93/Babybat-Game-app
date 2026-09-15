@@ -3,8 +3,21 @@
   "short_name": "BabyBat",
   "start_url": "./",
   "display": "standalone",
-  "background_color": "#090a0c",
-  "theme_color": "#090a0c",
-  "description": "Live point, reward, rulebook and organization tracker for Sovereign Circle and Nocturne Collective.",
-  "icons": []
+  "background_color": "#08070b",
+  "theme_color": "#17101e",
+  "description": "Private BabyBat game hub for Nocturne Collective and Sovereign Circle.",
+  "icons": [
+    {
+      "src": "babybat-icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "babybat-icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ]
 }
