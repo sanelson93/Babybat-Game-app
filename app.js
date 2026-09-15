@@ -1,5 +1,5 @@
-const APP_VERSION = '3.0.0';
-const UI_STORAGE = 'babybat-game-hub-ui-v30';
+const APP_VERSION = '3.1.0';
+const UI_STORAGE = 'babybat-game-hub-ui-v31';
 const CONFIG = window.BABYBAT_CONFIG;
 const { createClient } = window.supabase;
 const db = createClient(CONFIG.supabaseUrl, CONFIG.supabasePublishableKey, {
@@ -117,6 +117,11 @@ let appSettings = [];
 let mailMessages = [];
 let evidenceSubmissions = [];
 let notificationEvents = [];
+let counselThread = null;
+let counselMessages = [];
+let counselHealth = 'unknown';
+let counselSending = false;
+let counselPendingText = '';
 let mailMode = 'inbox';
 let realtimeChannel = null;
 let realtimeTimer = null;
@@ -240,7 +245,7 @@ function unreadMailCount(){
 function storageBytes(){return evidenceSubmissions.filter(e=>!e.deleted_at).reduce((a,e)=>a+Number(e.byte_size||0),0)}
 function humanBytes(n=0){const x=Number(n)||0;if(x<1024)return `${x} B`;if(x<1048576)return `${(x/1024).toFixed(1)} KB`;if(x<1073741824)return `${(x/1048576).toFixed(1)} MB`;return `${(x/1073741824).toFixed(2)} GB`;}
 
-function icon(name){const icons={home:'<path d="M3 11.5 12 4l9 7.5v8a1 1 0 0 1-1 1h-5v-6H9v6H4a1 1 0 0 1-1-1z"/>',mail:'<path d="M3 5h18v14H3zM3 6l9 7 9-7"/>',book:'<path d="M4 4.5A2.5 2.5 0 0 1 6.5 2H11v18H6.5A2.5 2.5 0 0 0 4 22zM20 4.5A2.5 2.5 0 0 0 17.5 2H13v18h4.5A2.5 2.5 0 0 1 20 22z"/>',ledger:'<path d="M5 3h14v18H5zM8 7h8M8 11h8M8 15h5"/>',org:'<path d="M12 3a3 3 0 1 1 0 6 3 3 0 0 1 0-6ZM5 11a2.5 2.5 0 1 1 0 5 2.5 2.5 0 0 1 0-5Zm14 0a2.5 2.5 0 1 1 0 5 2.5 2.5 0 0 1 0-5ZM8 21v-1.5A3.5 3.5 0 0 1 11.5 16h1a3.5 3.5 0 0 1 3.5 3.5V21M1.5 21v-1a3 3 0 0 1 3-3h1M22.5 21v-1a3 3 0 0 0-3-3h-1"/>',admin:'<path d="M12 3 5 6v5c0 5 3 8 7 10 4-2 7-5 7-10V6zM9 12l2 2 4-5"/>'};return `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">${icons[name]||icons.home}</svg>`}
+function icon(name){const icons={home:'<path d="M3 11.5 12 4l9 7.5v8a1 1 0 0 1-1 1h-5v-6H9v6H4a1 1 0 0 1-1-1z"/>',counsel:'<path d="M4 5h16v11H9l-5 4z"/><path d="M8 9h8M8 12h5"/>',mail:'<path d="M3 5h18v14H3zM3 6l9 7 9-7"/>',book:'<path d="M4 4.5A2.5 2.5 0 0 1 6.5 2H11v18H6.5A2.5 2.5 0 0 0 4 22zM20 4.5A2.5 2.5 0 0 0 17.5 2H13v18h4.5A2.5 2.5 0 0 1 20 22z"/>',ledger:'<path d="M5 3h14v18H5zM8 7h8M8 11h8M8 15h5"/>',org:'<path d="M12 3a3 3 0 1 1 0 6 3 3 0 0 1 0-6ZM5 11a2.5 2.5 0 1 1 0 5 2.5 2.5 0 0 1 0-5Zm14 0a2.5 2.5 0 1 1 0 5 2.5 2.5 0 0 1 0-5ZM8 21v-1.5A3.5 3.5 0 0 1 11.5 16h1a3.5 3.5 0 0 1 3.5 3.5V21M1.5 21v-1a3 3 0 0 1 3-3h1M22.5 21v-1a3 3 0 0 0-3-3h-1"/>',admin:'<path d="M12 3 5 6v5c0 5 3 8 7 10 4-2 7-5 7-10V6zM9 12l2 2 4-5"/>'};return `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">${icons[name]||icons.home}</svg>`}
 function crest(theme=viewTheme()){
   const img=theme==='nocturne'?'nocturne-collective-logo.webp':'sovereign-circle-logo.webp';
   return `<div class="crest crest-${theme}"><img src="${img}" alt="" /></div>`;
@@ -259,7 +264,7 @@ function header(){
 function nav(){
   const lastLabel=effectiveRole()==='game_master'?'Score':(isAdminAccount()&&ui.siteMode==='player'?'Profile':'Admin');
   const unread=unreadMailCount();
-  return `<nav class="nav"><span class="build-version">BABYBAT v${APP_VERSION}</span>${[['home','Home'],['mail',unread?`Mail ${unread}`:'Mail'],['book','Rules'],['ledger','Ledger'],['org','Orgs'],['admin',lastLabel]].map(([p,l])=>`<button class="${ui.activePage===p?'active':''}" onclick="go('${p}')">${icon(p)}<span>${l}</span></button>`).join('')}</nav>`;
+  return `<nav class="nav"><span class="build-version">BABYBAT v${APP_VERSION}</span>${[['home','Home'],['counsel','Counsel'],['mail',unread?`Mail ${unread}`:'Mail'],['book','Rules'],['ledger','Ledger'],['org','Orgs'],['admin',lastLabel]].map(([p,l])=>`<button class="${ui.activePage===p?'active':''}" onclick="go('${p}')">${icon(p)}<span>${l}</span></button>`).join('')}</nav>`;
 }
 
 function ledgerItems(){
@@ -314,7 +319,7 @@ function adminHome(p,available,led){
   <section class="section"><div class="section-head"><h2>Experience Check</h2><span>switch when needed</span></div><div class="preview-grid"><button class="preview-card sovereign" onclick="setSiteMode('player')"><img src="sovereign-circle-logo.webp"><div><b>Return to Player</b><span>Your live Shawn profile</span></div></button><button class="preview-card nocturne" onclick="setAdminPreview('moxie')"><img src="nocturne-collective-logo.webp"><div><b>Preview Moxie</b><span>Inspect Game Master layout</span></div></button></div></section>
   <section class="section"><div class="section-head"><h2>Organization Status</h2><span>live availability</span></div>${organizationPresence()}</section>
   <section class="section"><div class="section-head"><h2>Live Game</h2><span>${p.t} lifetime points</span></div><div class="card admin-score"><div><strong>${p.left}</strong><span>points to ${esc(p.tier)}</span></div><div><strong>${available.length}</strong><span>rewards ready</span></div><div><strong>${led.length}</strong><span>scored directives</span></div></div></section>
-  <section class="section"><div class="section-head"><h2>Quick Control</h2><span>site owner</span></div><div class="quick-actions"><button class="action-tile" onclick="go('admin')"><b>Control Center</b><span>Settings / scoring / storage</span></button><button class="action-tile" onclick="go('mail')"><b>BabyBat Mail</b><span>Official game correspondence</span></button><button class="action-tile" onclick="go('org')"><b>Organizations</b><span>Review both rosters</span></button></div></section></main>`;
+  <section class="section"><div class="section-head"><h2>Quick Control</h2><span>site owner</span></div><div class="quick-actions"><button class="action-tile" onclick="go('admin')"><b>Control Center</b><span>Settings / scoring / storage</span></button><button class="action-tile" onclick="go('counsel')"><b>Sovereign Counsel</b><span>Private AI strategy room</span></button><button class="action-tile" onclick="go('mail')"><b>BabyBat Mail</b><span>Official game correspondence</span></button><button class="action-tile" onclick="go('org')"><b>Organizations</b><span>Review both rosters</span></button></div></section></main>`;
 }
 function rewardChest(av,p,moxie=false){if(!av.length)return `<div class="empty">No unlocked rewards in the chest yet.<br><br><strong style="color:#d8dce2">Next:</strong> ${esc(p.tier)} at ${p.next} points.</div>`;return av.map(r=>`<div class="card reward-card"><div class="reward-icon">${r.tier==='Sovereign'?'♛':'◆'}</div><div class="reward-main"><h3>${esc(r.tier)} Reward</h3><p>Unlocked at ${r.milestone} · ${esc(r.game)}</p></div><span class="badge available">Available</span>${canRedeemView()?`<button class="use-btn" ${previewReadOnly()?'disabled':''} onclick="${previewReadOnly()?'previewOnly()':`askRedeem('${r.id}')`}">${moxie?"USE SHAWN'S":'USE'}</button>`:''}</div>`).join('')}
 function organizationTeasers(){
@@ -346,7 +351,7 @@ function submissionHistoryCard(e){
 }
 function submissionReviewCard(e){
   const d=directives.find(x=>x.id===e.directive_id);
-  return `<div class="card review-card"><div><span class="eyebrow">${esc(d?.code||'DIRECTIVE')}</span><h3>${esc(d?.title||'Photo Evidence')}</h3><p>${esc(e.caption||'No caption')}</p></div><div class="row"><button class="secondary" onclick="openEvidence('${esc(e.id)}')">View Photo</button><button class="primary" onclick="reviewEvidence('${esc(e.id)}','approved')">Approve</button></div></div>`;
+  return `<div class="card review-card"><div><span class="eyebrow">${esc(d?.code||'DIRECTIVE')}</span><h3>${esc(d?.title||'Photo Evidence')}</h3><p>${esc(e.caption||'No caption')}</p></div><div class="row"><button class="secondary" onclick="openEvidence('${esc(e.id)}')">View Photo</button><button class="secondary" onclick="askCounselAboutEvidence('${esc(e.id)}')">Ask Counsel</button><button class="primary" onclick="reviewEvidence('${esc(e.id)}','approved')">Approve</button></div></div>`;
 }
 function mailRows(){
   if(ui.demo) return [];
@@ -361,6 +366,44 @@ function mailPage(){
 function mailCard(m){
   const incoming=m.recipient_entity_id===currentEntity()?.id;
   return `<button class="mail-card ${incoming&&!m.recipient_read_at?'unread':''}" onclick="openMail('${esc(m.id)}')"><div class="mail-dot"></div><div class="mail-card-main"><div class="mail-card-head"><b>${esc(incoming?entityName(m.sender_entity_id):entityName(m.recipient_entity_id))}</b><time>${fmtDate(m.created_at)}</time></div><strong>${esc(m.subject)}</strong><p>${esc(String(m.body||'').replace(/\s+/g,' ').slice(0,120))}</p><span class="mail-category">${esc(m.category)}</span></div></button>`;
+}
+
+
+function counselSide(){return currentEntity()?.slug==='nocturne-collective'?'nocturne':'sovereign'}
+function counselName(){return counselSide()==='nocturne'?'Nocturne Counsel':'Sovereign Counsel'}
+function counselQuickPrompts(){
+  if(counselSide()==='nocturne') return [
+    ['What needs attention?','Pull the current BabyBat state and tell me what needs Nocturne attention right now.'],
+    ['Draft next Directive','Using the live game state and rules, help me draft the next Sovereign Directive. Do not issue it; give me the strongest ready-to-approve draft.'],
+    ['Review submissions','Review the current pending submissions and tell me what Nocturne should do next.'],
+    ['Audit scoring','Audit the current scoring/ledger for any material math, rule, or consistency issues.']
+  ];
+  return [
+    ['Pull latest','Pull the latest BabyBat state and brief the Sovereign Circle on everything materially new or actionable.'],
+    ['Analyze Directive','Analyze the newest active Directive. Scales should inspect wording and loopholes; Sigma should inspect scoring implications; Sphinx should summarize the best move.'],
+    ['Draft response','Draft a BabyBat Mail response to the most recent incoming game message. Keep it in my natural voice and do not send it.'],
+    ['Reward check','Tell me exactly where I stand on points, reward progress, and any available rewards.']
+  ];
+}
+function counselMessageCard(m){
+  const assistant=m.role==='assistant';
+  const evidence=m.metadata?.evidence_id;
+  return `<div class="counsel-msg ${assistant?'assistant':'user'}"><div class="counsel-msg-label">${assistant?esc(counselName()):esc(personLabel())}</div><div class="counsel-msg-body">${esc(m.content||'')}</div>${evidence?`<div class="counsel-evidence-tag">Photo evidence attached</div>`:''}${assistant?`<div class="counsel-actions"><button onclick="counselToMail('${esc(m.id)}')">Use in Mail</button>${counselSide()==='nocturne'?`<button onclick="counselToDirective('${esc(m.id)}')">Use as Directive</button>`:''}<button onclick="copyCounsel('${esc(m.id)}')">Copy</button></div>`:''}</div>`;
+}
+function counselPage(){
+  if(ui.demo) return `<main class="page"><section class="section"><div class="empty">Private AI Counsel is available only after signing into a live BabyBat account.</div></section></main>`;
+  if(previewReadOnly()) return `<main class="page"><section class="section"><div class="card"><div class="eyebrow">PRIVACY WALL</div><h3>Moxie's Counsel is private</h3><p class="small-note">Site Admin preview can inspect her interface, but it cannot open or read Nocturne Counsel. Sign into Moxie's actual BabyBat account to use that private room.</p><button class="secondary" onclick="setSiteMode('admin')">Back to Admin Home</button></div></section></main>`;
+  if(setting('counsel_enabled',true)===false) return `<main class="page"><section class="section"><div class="empty">BabyBat Counsel is currently disabled by Site Admin.</div></section></main>`;
+  const side=counselSide();const prompts=counselQuickPrompts();const configured=counselHealth==='ready';const needsKey=counselHealth==='needs_key';
+  const model=setting('counsel_model','gpt-5.6-sol');
+  const history=counselMessages.slice().sort((a,b)=>String(a.created_at).localeCompare(String(b.created_at)));
+  const pending=counselPendingText?`<div class="counsel-msg user pending"><div class="counsel-msg-label">${esc(personLabel())}</div><div class="counsel-msg-body">${esc(counselPendingText)}</div></div>`:'';
+  return `<main class="page counsel-page"><section class="counsel-hero ${side}"><div>${crest(side==='nocturne'?'nocturne':'sovereign')}<div><span class="eyebrow">PRIVATE AI STRATEGY ROOM</span><h2>${esc(counselName())}</h2><p>${side==='nocturne'?'Nocturne Collective only':'Sovereign Circle only'} · ${esc(model)}</p></div></div><span class="counsel-health ${configured?'ready':needsKey?'missing':'checking'}">${configured?'AI READY':needsKey?'SETUP NEEDED':'CHECKING'}</span></section>
+  ${needsKey?`<section class="section"><div class="notice">${isAdminAccount()?`Counsel is built, but the OpenAI API key has not been added to Supabase yet. Add the server-side <strong>OPENAI_API_KEY</strong> secret, then tap Test Counsel in Site Admin.`:`Counsel is being configured by Site Admin. Your private room and history are ready for activation.`}</div></section>`:''}
+  <section class="section counsel-quick"><div class="section-head"><h2>Quick Ask</h2><span>live BabyBat context</span></div><div class="counsel-chips">${prompts.map(([label,prompt])=>`<button ${configured&&!counselSending?'':'disabled'} onclick="sendCounselPrompt(${JSON.stringify(prompt).replace(/"/g,'&quot;')})">${esc(label)}</button>`).join('')}</div></section>
+  <section class="section counsel-thread"><div class="counsel-privacy">This room is private to this BabyBat account. Relevant live game data is sent to OpenAI for each answer; opposing Counsel history is never shared.</div><div id="counselMessages" class="counsel-messages">${history.length?history.map(counselMessageCard).join(''):`<div class="counsel-welcome"><b>${esc(counselName())} is standing by.</b><span>Ask about directives, Mail, scoring, rewards, rules, evidence, or strategy.</span></div>`}${pending}${counselSending?`<div class="counsel-thinking"><i></i><i></i><i></i><span>Counsel is working…</span></div>`:''}</div></section>
+  <section class="counsel-composer"><textarea id="counselInput" class="input" rows="2" maxlength="12000" ${configured&&!counselSending?'':'disabled'} placeholder="Ask ${esc(counselName())}…"></textarea><button id="counselSend" class="primary" ${configured&&!counselSending?'':'disabled'} onclick="askCounsel()">Send</button></section>
+  <section class="section counsel-footer"><button class="ghost" ${configured&&!counselSending?'':'disabled'} onclick="resetCounsel()">Reset private Counsel history</button></section></main>`;
 }
 
 function charterRows(){
@@ -599,11 +642,11 @@ function adminControlCenter(){
     <div class="card admin-panel"><div class="eyebrow">GAME MECHANICS</div><h3>Core Game</h3><div class="field"><label>Game Name</label><input id="setGameName" class="input" value="${esc(game?.name||'')}"></div><div class="field"><label>Reward Interval</label><input id="setRewardInterval" class="input" type="number" min="1" value="${Number(game?.reward_interval||200)}"></div><button class="primary" onclick="saveGameBasics()">Save Game Settings</button></div>
     <div class="card admin-panel"><div class="eyebrow">PHOTO STORAGE</div><h3>Evidence Retention</h3><div class="field"><label>Max Long Edge (px)</label><input id="setPhotoEdge" class="input" type="number" min="800" max="4000" value="${Number(setting('photo_max_long_edge',1800))}"></div><div class="field"><label>Compression Quality (0.50–0.95)</label><input id="setPhotoQuality" class="input" type="number" step="0.01" min="0.5" max="0.95" value="${Number(setting('photo_quality',0.82))}"></div><div class="field"><label>Delete Grace Period After Save (days)</label><input id="setPhotoRetention" class="input" type="number" min="1" max="365" value="${Number(setting('photo_retention_days_after_save',14))}"></div><label class="toggle-row"><input id="setPhotoAutoDelete" type="checkbox" ${auto?'checked':''}><span>Make saved photos eligible for auto-cleanup</span></label><button class="primary" onclick="savePhotoSettings()">Save Photo Settings</button></div>
     <div class="card admin-panel"><div class="eyebrow">MAIL</div><h3>Official Addresses</h3><div class="field"><label>Sovereign Circle</label><input id="setSovMail" class="input" value="${esc(setting('sovereign_mail_address','chambers@sovereigncircle.org'))}"></div><div class="field"><label>Nocturne Collective</label><input id="setNocMail" class="input" value="${esc(setting('nocturne_mail_address','nocturnecollective@nightshift.net'))}"></div><label class="toggle-row"><input id="setMailEnabled" type="checkbox" ${setting('mail_enabled',true)!==false?'checked':''}><span>Enable BabyBat Mail</span></label><button class="primary" onclick="saveMailSettings()">Save Mail Settings</button></div>
-    <div class="card admin-panel"><div class="eyebrow">INTEGRATIONS</div><h3>Connection Status</h3><div class="diag-row"><span>ChatGPT bridge data</span><b class="ok">READY</b></div><div class="diag-row"><span>Custom ChatGPT app</span><b class="pending">WAITING ON ACCOUNT SUPPORT</b></div><div class="diag-row"><span>SMS provider</span><b class="pending">NOT CONFIGURED</b></div><label class="toggle-row"><input id="setSmsEnabled" type="checkbox" ${setting('sms_enabled',false)===true?'checked':''}><span>SMS master switch (takes effect after provider setup)</span></label><button class="secondary" onclick="saveIntegrationSettings()">Save Integration Switches</button></div>
+    <div class="card admin-panel"><div class="eyebrow">AI COUNSEL</div><h3>Private Counsel Engine</h3><div class="diag-row"><span>OpenAI Responses API</span><b class="${counselHealth==='ready'?'ok':'pending'}">${counselHealth==='ready'?'READY':counselHealth==='needs_key'?'API KEY NEEDED':'CHECKING'}</b></div><label class="toggle-row"><input id="setCounselEnabled" type="checkbox" ${setting('counsel_enabled',true)!==false?'checked':''}><span>Enable Sovereign + Nocturne Counsel</span></label><div class="field"><label>Model</label><select id="setCounselModel" class="input"><option value="gpt-5.6-sol" ${setting('counsel_model','gpt-5.6-sol')==='gpt-5.6-sol'?'selected':''}>GPT-5.6 Sol — strongest</option><option value="gpt-5.6-terra" ${setting('counsel_model')==='gpt-5.6-terra'?'selected':''}>GPT-5.6 Terra — balanced</option><option value="gpt-5.6-luna" ${setting('counsel_model')==='gpt-5.6-luna'?'selected':''}>GPT-5.6 Luna — cheapest</option></select></div><div class="field"><label>Reasoning</label><select id="setCounselReasoning" class="input">${['none','low','medium','high','xhigh','max'].map(x=>`<option value="${x}" ${setting('counsel_reasoning_effort','medium')===x?'selected':''}>${x}</option>`).join('')}</select></div><div class="field"><label>Sovereign instruction supplement</label><textarea id="setSovCounselNotes" class="input" rows="3" placeholder="Optional owner notes…">${esc(setting('sovereign_counsel_notes',''))}</textarea></div><div class="field"><label>Nocturne instruction supplement</label><textarea id="setNocCounselNotes" class="input" rows="3" placeholder="Optional owner notes…">${esc(setting('nocturne_counsel_notes',''))}</textarea></div><button class="primary" onclick="saveCounselSettings()">Save Counsel Settings</button><button class="secondary" onclick="checkCounselHealth(true)">Test Counsel Connection</button></div><div class="card admin-panel"><div class="eyebrow">INTEGRATIONS</div><h3>Connection Status</h3><div class="diag-row"><span>In-app Counsel backend</span><b class="ok">DEPLOYED</b></div><div class="diag-row"><span>SMS provider</span><b class="pending">NOT CONFIGURED</b></div><label class="toggle-row"><input id="setSmsEnabled" type="checkbox" ${setting('sms_enabled',false)===true?'checked':''}><span>SMS master switch (takes effect after provider setup)</span></label><button class="secondary" onclick="saveIntegrationSettings()">Save Integration Switches</button></div>
   </div></section>
   <section class="section"><div class="section-head"><h2>Storage Health</h2><span>${humanBytes(storageBytes())} stored</span></div><div class="card storage-health"><div><strong>${evidenceSubmissions.filter(e=>!e.deleted_at).length}</strong><span>photos in BabyBat</span></div><div><strong>${eligible}</strong><span>eligible for cleanup</span></div><div><strong>${humanBytes(storageBytes())}</strong><span>current evidence size</span></div></div><button class="danger full-btn" ${eligible?'':'disabled'} onclick="purgeEligiblePhotos()">Purge ${eligible} Eligible Photo${eligible===1?'':'s'}</button></section>
   <section class="section"><div class="section-head"><h2>Scoring Rules</h2><span>edit without redeploy</span></div><div class="admin-rule-list">${scoringRules.map(r=>`<div class="admin-rule-row"><span>${esc(r.label)}</span><input class="input score-admin-input" data-score-id="${esc(r.id)}" type="number" value="${Number(r.points)}"></div>`).join('')}</div><button class="primary full-btn" onclick="saveScoringRules()">Save Scoring Values</button></section>
-  <section class="section"><div class="section-head"><h2>Diagnostics</h2><span>v${APP_VERSION}</span></div><div class="card diagnostics"><div><span>Supabase</span><b class="ok">CONNECTED</b></div><div><span>Mail records</span><b>${mailMessages.length}</b></div><div><span>Evidence records</span><b>${evidenceSubmissions.length}</b></div><div><span>Notification queue</span><b>${notificationEvents.filter(n=>n.sms_status==='queued').length}</b></div></div></section>`;
+  <section class="section"><div class="section-head"><h2>Diagnostics</h2><span>v${APP_VERSION}</span></div><div class="card diagnostics"><div><span>Supabase</span><b class="ok">CONNECTED</b></div><div><span>Mail records</span><b>${mailMessages.length}</b></div><div><span>Evidence records</span><b>${evidenceSubmissions.length}</b></div><div><span>Counsel messages</span><b>${counselMessages.length}</b></div><div><span>Counsel service</span><b class="${counselHealth==='ready'?'ok':'pending'}">${counselHealth==='ready'?'READY':counselHealth==='needs_key'?'NEEDS API KEY':'CHECKING'}</b></div><div><span>Notification queue</span><b>${notificationEvents.filter(n=>n.sms_status==='queued').length}</b></div></div></section>`;
 }
 
 function adminRewards(rr){const av=rr.filter(r=>r.status==='available');if(!av.length)return `<div class="empty">No available rewards to redeem.</div>`;return av.map(r=>`<div class="card reward-card"><div class="reward-icon">◆</div><div class="reward-main"><h3>${esc(r.tier)} Reward</h3><p>Milestone ${r.milestone}</p></div>${canRedeemView()?`<button class="use-btn" ${previewReadOnly()?'disabled':''} onclick="${previewReadOnly()?'previewOnly()':`askRedeem('${r.id}')`}">${isGMView()?"USE SHAWN'S":'USE'}</button>`:''}</div>`).join('')}
@@ -641,7 +684,7 @@ function render(){
     if(remoteStatus==='pending'){root.innerHTML=pendingScreen();return}
     if(remoteStatus==='error'){root.innerHTML=errorScreen();return}
   }
-  const pages={home,mail:mailPage,book:rules,ledger:ledgerPage,org:organizationsPage,admin};
+  const pages={home,counsel:counselPage,mail:mailPage,book:rules,ledger:ledgerPage,org:organizationsPage,admin};
   root.innerHTML=siteModeSwitcher()+header()+(pages[ui.activePage]||home)()+nav();
 }
 
@@ -697,7 +740,7 @@ async function boot(){
   if(session) await loadRemote(); else {remoteStatus='ready';render()}
 }
 
-function clearRemote(){game=null;membership=null;entities=[];organizationStatuses=[];organizationMembers=[];directives=[];pointTransactions=[];rewards=[];tiers=[];scoringRules=[];ruleSections=[];appSettings=[];mailMessages=[];evidenceSubmissions=[];notificationEvents=[];profile=null;stopRealtime()}
+function clearRemote(){game=null;membership=null;entities=[];organizationStatuses=[];organizationMembers=[];directives=[];pointTransactions=[];rewards=[];tiers=[];scoringRules=[];ruleSections=[];appSettings=[];mailMessages=[];evidenceSubmissions=[];notificationEvents=[];counselThread=null;counselMessages=[];counselHealth='unknown';profile=null;stopRealtime()}
 async function loadRemote({silent=false}={}){
   if(!session) return;
   if(!silent){remoteStatus='loading'; render();}
@@ -722,7 +765,7 @@ async function loadRemote({silent=false}={}){
       if(!['none','moxie'].includes(ui.adminPreview)) ui.adminPreview='none';
     }
     saveUI();
-    const [er,osr,om,dr,pr,rr,tr,sr,rb,aset,mail,evid,notif] = await Promise.all([
+    const [er,osr,om,dr,pr,rr,tr,sr,rb,aset,mail,evid,notif,cth,cmsg] = await Promise.all([
       db.from('game_entities').select('*').order('name'),
       db.from('organization_status').select('*').eq('game_id',game.id),
       db.from('organization_members').select('*').eq('game_id',game.id).eq('is_active',true).order('sort_order'),
@@ -735,13 +778,16 @@ async function loadRemote({silent=false}={}){
       db.from('app_settings').select('*').eq('game_id',game.id),
       db.from('mail_messages').select('*').eq('game_id',game.id).order('created_at',{ascending:false}),
       db.from('evidence_submissions').select('*').eq('game_id',game.id).order('created_at',{ascending:false}),
-      db.from('notification_events').select('*').eq('game_id',game.id).order('created_at',{ascending:false}).limit(100)
+      db.from('notification_events').select('*').eq('game_id',game.id).order('created_at',{ascending:false}).limit(100),
+      db.from('counsel_threads').select('*').eq('game_id',game.id).eq('user_id',session.user.id).maybeSingle(),
+      db.from('counsel_messages').select('*').eq('game_id',game.id).eq('user_id',session.user.id).order('created_at',{ascending:true}).limit(300)
     ]);
-    for(const r of [er,osr,om,dr,pr,rr,tr,sr,rb,aset,mail,evid,notif]) if(r.error) throw r.error;
-    entities=er.data||[];organizationStatuses=osr.data||[];organizationMembers=om.data||[];directives=dr.data||[];pointTransactions=pr.data||[];rewards=rr.data||[];tiers=tr.data||[];scoringRules=sr.data||[];ruleSections=rb.data||[];appSettings=aset.data||[];mailMessages=mail.data||[];evidenceSubmissions=evid.data||[];notificationEvents=notif.data||[];
+    for(const r of [er,osr,om,dr,pr,rr,tr,sr,rb,aset,mail,evid,notif,cth,cmsg]) if(r.error) throw r.error;
+    entities=er.data||[];organizationStatuses=osr.data||[];organizationMembers=om.data||[];directives=dr.data||[];pointTransactions=pr.data||[];rewards=rr.data||[];tiers=tr.data||[];scoringRules=sr.data||[];ruleSections=rb.data||[];appSettings=aset.data||[];mailMessages=mail.data||[];evidenceSubmissions=evid.data||[];notificationEvents=notif.data||[];counselThread=cth.data||null;counselMessages=cmsg.data||[];
     remoteStatus='ready';
     startRealtime();
     render();
+    if(counselHealth==='unknown') checkCounselHealth();
   }catch(e){remoteError=e?.message||String(e);remoteStatus='error';render()}
 }
 function startRealtime(){
@@ -755,6 +801,7 @@ function startRealtime(){
     .on('postgres_changes',{event:'*',schema:'public',table:'mail_messages',filter:`game_id=eq.${game.id}`},queueRealtimeReload)
     .on('postgres_changes',{event:'*',schema:'public',table:'evidence_submissions',filter:`game_id=eq.${game.id}`},queueRealtimeReload)
     .on('postgres_changes',{event:'*',schema:'public',table:'app_settings',filter:`game_id=eq.${game.id}`},queueRealtimeReload)
+    .on('postgres_changes',{event:'*',schema:'public',table:'counsel_messages',filter:`game_id=eq.${game.id}`},queueRealtimeReload)
     .subscribe();
 }
 function queueRealtimeReload(){clearTimeout(realtimeTimer);realtimeTimer=setTimeout(()=>loadRemote({silent:true}),350)}
@@ -784,7 +831,7 @@ window.toggleOrganizationStatus=async slug=>{
 }
 window.openMember=id=>{const m=memberRows().find(x=>String(x.id)===String(id));if(!m)return;document.body.insertAdjacentHTML('beforeend',`<div class="modal-back" id="memberModal" onclick="if(event.target.id==='memberModal')closeMember()"><div class="modal member-modal">${m.image_path?`<img src="${esc(assetUrl(m.image_path))}" alt="${esc(m.name)}">`:`<div class="member-placeholder large">${esc(m.name.slice(0,1))}</div>`}<div class="member-modal-copy"><div class="eyebrow">${esc(m.role_name||'Member')}</div><h3>${esc(m.name)}</h3><strong>${esc(m.position_title)}</strong>${m.department?`<p>${esc(m.department)}</p>`:''}<button class="secondary" onclick="closeMember()">Close</button></div></div></div>`)}
 window.closeMember=()=>document.getElementById('memberModal')?.remove()
-window.syncNow=async()=>{if(ui.demo)return;await loadRemote();toast('Game state synced')}
+window.syncNow=async()=>{if(ui.demo)return;counselHealth='unknown';await loadRemote();toast('Game state synced')}
 window.claimAccess=async()=>{
   const code=normalizeAccessCode(document.getElementById('accessCode')?.value||'');
   if(!code){toast('Enter your one-time access code');return}
@@ -888,11 +935,11 @@ window.signOut=async()=>{stopRealtime();await db.auth.signOut();session=null;cle
 
 
 window.setMailMode=mode=>{mailMode=mode==='sent'?'sent':'inbox';render()}
-window.openComposeMail=(replyId='')=>{
+window.openComposeMail=(replyId='',prefillBody='',prefillSubject='',prefillCategory='message')=>{
   if(ui.demo||previewReadOnly())return;
   const reply=mailMessages.find(m=>m.id===replyId);const other=otherGameEntity();if(!other)return;
-  const subject=reply?(/^re:/i.test(reply.subject)?reply.subject:`Re: ${reply.subject}`):'';
-  document.body.insertAdjacentHTML('beforeend',`<div class="modal-back" id="composeModal"><div class="modal mail-compose"><div class="eyebrow">FROM ${esc(currentEntity()?.name||'')}</div><h3>New BabyBat Mail</h3><p class="small-note">To ${esc(other.name)} · ${esc(mailAddressForEntity(other.id))}</p><div class="field"><label>Type</label><select id="mailCategory" class="input"><option value="message">Message</option><option value="directive">Directive</option><option value="submission">Submission</option><option value="scoring">Scoring</option><option value="ruling">Ruling</option><option value="reward">Reward</option></select></div><div class="field"><label>Subject</label><input id="mailSubject" class="input" value="${esc(subject)}" placeholder="Subject"></div><div class="field"><label>Message</label><textarea id="mailBody" class="input" rows="8" placeholder="Official game correspondence…"></textarea></div><div class="row"><button class="secondary" onclick="document.getElementById('composeModal')?.remove()">Cancel</button><button class="primary" onclick="sendMail('${esc(replyId)}')">Send to ${esc(other.name)}</button></div></div></div>`);
+  const subject=reply?(/^re:/i.test(reply.subject)?reply.subject:`Re: ${reply.subject}`):(prefillSubject||'');
+  document.body.insertAdjacentHTML('beforeend',`<div class="modal-back" id="composeModal"><div class="modal mail-compose"><div class="eyebrow">FROM ${esc(currentEntity()?.name||'')}</div><h3>New BabyBat Mail</h3><p class="small-note">To ${esc(other.name)} · ${esc(mailAddressForEntity(other.id))}</p><div class="field"><label>Type</label><select id="mailCategory" class="input"><option value="message" ${prefillCategory==='message'?'selected':''}>Message</option><option value="directive" ${prefillCategory==='directive'?'selected':''}>Directive</option><option value="submission" ${prefillCategory==='submission'?'selected':''}>Submission</option><option value="scoring" ${prefillCategory==='scoring'?'selected':''}>Scoring</option><option value="ruling" ${prefillCategory==='ruling'?'selected':''}>Ruling</option><option value="reward" ${prefillCategory==='reward'?'selected':''}>Reward</option></select></div><div class="field"><label>Subject</label><input id="mailSubject" class="input" value="${esc(subject)}" placeholder="Subject"></div><div class="field"><label>Message</label><textarea id="mailBody" class="input" rows="8" placeholder="Official game correspondence…">${esc(prefillBody||'')}</textarea></div><div class="row"><button class="secondary" onclick="document.getElementById('composeModal')?.remove()">Cancel</button><button class="primary" onclick="sendMail('${esc(replyId)}')">Send to ${esc(other.name)}</button></div></div></div>`);
 }
 window.sendMail=async(replyId='')=>{
   const subject=document.getElementById('mailSubject')?.value.trim()||'';const body=document.getElementById('mailBody')?.value.trim()||'';const category=document.getElementById('mailCategory')?.value||'message';
@@ -934,7 +981,7 @@ window.submitEvidence=async directiveId=>{
 }
 window.openEvidence=async id=>{
   const e=evidenceSubmissions.find(x=>x.id===id);if(!e||e.deleted_at){toast('This photo is no longer stored in BabyBat');return}const signed=await db.storage.from('game-evidence').createSignedUrl(e.storage_path,600);if(signed.error){toast(signed.error.message);return}const recipient=e.recipient_entity_id===currentEntity()?.id;const d=directives.find(x=>x.id===e.directive_id);
-  document.body.insertAdjacentHTML('beforeend',`<div class="modal-back" id="photoModal"><div class="modal photo-view"><div class="eyebrow">${esc(d?.code||'EVIDENCE')}</div><h3>${esc(d?.title||'Photo Submission')}</h3><img src="${esc(signed.data.signedUrl)}" alt="Submitted evidence"><p>${esc(e.caption||'No caption')}</p><div class="photo-meta">${humanBytes(e.byte_size||0)} · ${fmtDate(e.created_at)} · ${esc(e.status)}</div><div class="row"><button class="secondary" onclick="document.getElementById('photoModal')?.remove()">Close</button>${recipient?`<button class="secondary" onclick="saveEvidencePhoto('${esc(e.id)}')">Save Photo</button>`:''}${recipient&&accountRole()==='game_master'?`<button class="primary" onclick="reviewEvidence('${esc(e.id)}','approved')">Approve</button><button class="danger" onclick="reviewEvidence('${esc(e.id)}','rejected')">Reject</button>`:''}</div></div></div>`)
+  document.body.insertAdjacentHTML('beforeend',`<div class="modal-back" id="photoModal"><div class="modal photo-view"><div class="eyebrow">${esc(d?.code||'EVIDENCE')}</div><h3>${esc(d?.title||'Photo Submission')}</h3><img src="${esc(signed.data.signedUrl)}" alt="Submitted evidence"><p>${esc(e.caption||'No caption')}</p><div class="photo-meta">${humanBytes(e.byte_size||0)} · ${fmtDate(e.created_at)} · ${esc(e.status)}</div><div class="row"><button class="secondary" onclick="document.getElementById('photoModal')?.remove()">Close</button><button class="secondary" onclick="askCounselAboutEvidence('${esc(e.id)}')">Ask Counsel</button>${recipient?`<button class="secondary" onclick="saveEvidencePhoto('${esc(e.id)}')">Save Photo</button>`:''}${recipient&&accountRole()==='game_master'?`<button class="primary" onclick="reviewEvidence('${esc(e.id)}','approved')">Approve</button><button class="danger" onclick="reviewEvidence('${esc(e.id)}','rejected')">Reject</button>`:''}</div></div></div>`)
 }
 window.saveEvidencePhoto=async id=>{
   const e=evidenceSubmissions.find(x=>x.id===id);if(!e)return;const dl=await db.storage.from('game-evidence').download(e.storage_path);if(dl.error){toast(dl.error.message);return}const file=new File([dl.data],e.original_name||'babybat-photo.jpg',{type:e.mime_type||dl.data.type||'image/jpeg'});try{if(navigator.canShare?.({files:[file]})){await navigator.share({files:[file],title:'BabyBat Photo'});}else{const url=URL.createObjectURL(dl.data);const a=document.createElement('a');a.href=url;a.download=file.name;document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),5000)}}catch(err){if(err?.name==='AbortError')return;toast(err?.message||String(err));return}
@@ -945,9 +992,32 @@ window.saveGameBasics=async()=>{const name=document.getElementById('setGameName'
 async function saveSettings(values){const payload=Object.entries(values).map(([setting_key,setting_value])=>({game_id:game.id,setting_key,setting_value,updated_by_user_id:session.user.id,updated_at:new Date().toISOString()}));const r=await db.from('app_settings').upsert(payload,{onConflict:'game_id,setting_key'});if(r.error)throw r.error}
 window.savePhotoSettings=async()=>{try{await saveSettings({photo_max_long_edge:Number(document.getElementById('setPhotoEdge')?.value)||1800,photo_quality:Number(document.getElementById('setPhotoQuality')?.value)||.82,photo_retention_days_after_save:Number(document.getElementById('setPhotoRetention')?.value)||14,photo_auto_delete_after_save:!!document.getElementById('setPhotoAutoDelete')?.checked});await loadRemote({silent:true});toast('Photo settings saved')}catch(e){toast(e.message)}}
 window.saveMailSettings=async()=>{try{await saveSettings({sovereign_mail_address:document.getElementById('setSovMail')?.value.trim()||'chambers@sovereigncircle.org',nocturne_mail_address:document.getElementById('setNocMail')?.value.trim()||'nocturnecollective@nightshift.net',mail_enabled:!!document.getElementById('setMailEnabled')?.checked});await loadRemote({silent:true});toast('Mail settings saved')}catch(e){toast(e.message)}}
+window.saveCounselSettings=async()=>{try{await saveSettings({counsel_enabled:!!document.getElementById('setCounselEnabled')?.checked,counsel_model:document.getElementById('setCounselModel')?.value||'gpt-5.6-sol',counsel_reasoning_effort:document.getElementById('setCounselReasoning')?.value||'medium',sovereign_counsel_notes:document.getElementById('setSovCounselNotes')?.value||'',nocturne_counsel_notes:document.getElementById('setNocCounselNotes')?.value||''});await loadRemote({silent:true});toast('Counsel settings saved')}catch(e){toast(e.message)}}
 window.saveIntegrationSettings=async()=>{try{await saveSettings({sms_enabled:!!document.getElementById('setSmsEnabled')?.checked});await loadRemote({silent:true});toast('Integration switches saved')}catch(e){toast(e.message)}}
 window.saveScoringRules=async()=>{const inputs=[...document.querySelectorAll('.score-admin-input')];try{for(const i of inputs){const v=Number(i.value);if(!Number.isFinite(v)||v===0)throw new Error('Scoring values must be non-zero numbers.');const r=await db.from('scoring_rules').update({points:v,updated_at:new Date().toISOString()}).eq('id',i.dataset.scoreId);if(r.error)throw r.error}await loadRemote({silent:true});toast('Scoring values saved')}catch(e){toast(e.message)}}
 window.purgeEligiblePhotos=async()=>{const now=new Date();const rows=evidenceSubmissions.filter(e=>!e.deleted_at&&e.delete_after&&new Date(e.delete_after)<=now);if(!rows.length){toast('No photos are eligible for cleanup');return}if(!confirm(`Permanently remove ${rows.length} eligible BabyBat photo${rows.length===1?'':'s'}? The game record remains.`))return;const rm=await db.storage.from('game-evidence').remove(rows.map(e=>e.storage_path));if(rm.error){toast(rm.error.message);return}const ids=rows.map(e=>e.id);const upd=await db.from('evidence_submissions').update({deleted_at:new Date().toISOString()}).in('id',ids);if(upd.error){toast(upd.error.message);return}await loadRemote({silent:true});toast(`${rows.length} photo${rows.length===1?'':'s'} removed from storage`)}
+
+
+window.checkCounselHealth=async(showToast=false)=>{
+  if(ui.demo||!session)return;
+  counselHealth='checking';if(showToast)render();
+  try{const {data,error}=await db.functions.invoke('babybat-counsel',{body:{action:'health'}});if(error)throw error;counselHealth=data?.configured?'ready':'needs_key';if(showToast)toast(data?.configured?'Counsel connection is ready':'OpenAI API key is not configured yet')}catch(e){counselHealth='error';if(showToast)toast(e?.message||String(e))}render();
+}
+window.askCounsel=()=>{const el=document.getElementById('counselInput');const text=el?.value.trim()||'';if(!text){toast('Ask Counsel something first');return}sendCounselPrompt(text)}
+window.sendCounselPrompt=async(text,evidenceId='')=>{
+  if(ui.demo||previewReadOnly()||counselSending)return;
+  const msg=String(text||'').trim();if(!msg)return;
+  if(counselHealth!=='ready'){toast('Counsel is not connected yet');return}
+  counselSending=true;counselPendingText=msg;render();requestAnimationFrame(scrollCounselBottom);
+  try{const {data,error}=await db.functions.invoke('babybat-counsel',{body:{action:'chat',message:msg,...(evidenceId?{evidence_id:evidenceId}:{})}});if(error)throw error;if(data?.error)throw new Error(data.error);counselPendingText='';counselSending=false;await loadRemote({silent:true});ui.activePage='counsel';saveUI();render();requestAnimationFrame(scrollCounselBottom)}catch(e){counselSending=false;counselPendingText='';render();toast(e?.message||String(e))}
+}
+window.scrollCounselBottom=()=>{const box=document.getElementById('counselMessages');if(box)box.scrollTop=box.scrollHeight}
+window.askCounselAboutEvidence=id=>{document.getElementById('photoModal')?.remove();ui.activePage='counsel';saveUI();render();sendCounselPrompt(counselSide()==='nocturne'?'Analyze this evidence photo against the Directive and current rules. Tell me what matters before I approve, reject, or score it.':'Analyze this submitted evidence photo against the active Directive and current rules. Tell me what the Sovereign Circle should notice.',id)}
+window.counselToMail=id=>{const m=counselMessages.find(x=>x.id===id&&x.role==='assistant');if(!m)return;openComposeMail('',m.content,'','message')}
+window.copyCounsel=async id=>{const m=counselMessages.find(x=>x.id===id);if(!m)return;try{await navigator.clipboard.writeText(m.content);toast('Counsel response copied')}catch{toast('Could not copy response')}}
+window.counselToDirective=id=>{const m=counselMessages.find(x=>x.id===id&&x.role==='assistant');if(!m||counselSide()!=='nocturne')return;document.body.insertAdjacentHTML('beforeend',`<div class="modal-back" id="counselDirectiveModal"><div class="modal"><div class="eyebrow">HUMAN APPROVAL REQUIRED</div><h3>Turn Counsel Draft into Directive</h3><p class="small-note">Review and edit everything before issuing. Counsel never sends this automatically.</p><div class="field"><label>Directive Code</label><input id="counselDirectiveCode" class="input" placeholder="SD-004"></div><div class="field"><label>Title</label><input id="counselDirectiveTitle" class="input" placeholder="Directive title"></div><div class="field"><label>Directive Text</label><textarea id="counselDirectiveBody" class="input" rows="10">${esc(m.content)}</textarea></div><div class="row"><button class="secondary" onclick="document.getElementById('counselDirectiveModal')?.remove()">Cancel</button><button class="primary" onclick="issueCounselDirective()">Issue + Send</button></div></div></div>`)}
+window.issueCounselDirective=async()=>{const code=normalizeDirectiveCode(document.getElementById('counselDirectiveCode')?.value||'');const title=document.getElementById('counselDirectiveTitle')?.value.trim()||'';const body=document.getElementById('counselDirectiveBody')?.value.trim()||'';if(!code||!title||!body){toast('Code, title and Directive text are required');return}document.getElementById('counselDirectiveModal')?.remove();const now=new Date().toISOString();const ins=await db.from('directives').insert({game_id:game.id,code,title,description:body,status:'issued',issued_by_user_id:session.user.id,issued_at:now}).select().single();if(ins.error){toast(ins.error.message);return}const sender=currentEntity(),recipient=otherGameEntity();const mid=crypto.randomUUID();const mail=await db.from('mail_messages').insert({id:mid,game_id:game.id,thread_id:mid,sender_entity_id:sender.id,recipient_entity_id:recipient.id,sender_user_id:session.user.id,subject:`${code} — ${title}`,body,category:'directive'});if(mail.error){toast(`Directive created, but Mail failed: ${mail.error.message}`);await loadRemote({silent:true});return}await loadRemote({silent:true});toast(`${code} issued to ${recipient.name}`)}
+window.resetCounsel=async()=>{if(counselSending)return;if(!confirm(`Reset ${counselName()}? This clears this BabyBat account's private Counsel history and starts a fresh AI conversation.`))return;try{const {data,error}=await db.functions.invoke('babybat-counsel',{body:{action:'reset'}});if(error)throw error;if(data?.error)throw new Error(data.error);counselThread=null;counselMessages=[];render();toast('Private Counsel history reset')}catch(e){toast(e?.message||String(e))}}
 
 window.askRedeem=id=>{const r=rewardRows().find(x=>x.id===id);if(!r)return;document.body.insertAdjacentHTML('beforeend',`<div class="modal-back" id="redeemModal"><div class="modal"><h3>Use ${esc(r.tier)} Reward?</h3><p>This removes it from the active Reward Chest but keeps it permanently in Redeemed Rewards. ${isGMView()?"Moxie's redemption clears the same shared reward from Shawn's chest.":''}</p><div class="row"><button class="secondary" onclick="closeModal()">Cancel</button><button class="primary" onclick="redeem('${r.id}')">Confirm Use</button></div></div></div>`)}
 window.closeModal=()=>document.getElementById('redeemModal')?.remove()

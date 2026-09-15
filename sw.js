@@ -1,5 +1,5 @@
-const CACHE='babybat-v300-major';
-const CORE=['./','./index.html','./styles.css?v=3.0.0','./config.js?v=3.0.0','./app.js?v=3.0.0','./manifest.json'];
+const CACHE='babybat-v310-counsel';
+const CORE=['./','./index.html','./styles.css?v=3.1.0','./config.js?v=3.1.0','./app.js?v=3.1.0','./manifest.json'];
 const ASSETS=['./nc-cress.webp','./nc-dusk.webp','./nc-eclipse.webp','./nc-ember.webp','./nc-jinx.webp','./nc-moxie.webp','./nc-nyx.webp','./nc-sable.webp','./nc-selene.webp','./nc-vega.webp','./nocturne-collective-logo.webp','./sc-sage.webp','./sc-saint.webp','./sc-scales.webp','./sc-shawn.webp','./sc-sigma.webp','./sc-sinister.webp','./sc-sir.webp','./sc-sphinx.webp','./sovereign-circle-logo.webp'];
 self.addEventListener('install',event=>event.waitUntil((async()=>{
   const cache=await caches.open(CACHE);

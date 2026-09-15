@@ -2,16 +2,32 @@
 -- project: babybat-game-hub
 -- ref: mbxevizxcwmmldjtbksq
 --
--- Production migrations now include the v3 game-hub layer:
+-- Production migrations include the v3 hub layer plus v3.1 private Counsel:
 --   organization_status
 --   app_settings
 --   mail_messages
 --   evidence_submissions
 --   notification_events
+--   counsel_threads
+--   counsel_messages
 --   private game-evidence Storage bucket + RLS
+--   babybat-counsel Supabase Edge Function (JWT required)
 --   BabyBat bridge RPCs: babybat_snapshot(), babybat_send_mail(), babybat_set_status()
---   Realtime publication for organization status, Mail, evidence, app settings,
---   directives, point transactions, and rewards.
+--
+-- Counsel RLS:
+--   - each authenticated user can see only their own counsel_thread/messages
+--   - thread entity_id must match that user's game membership
+--   - Moxie preview from Shawn Site Admin cannot expose Moxie's Counsel
+--
+-- Counsel app settings:
+--   counsel_enabled
+--   counsel_model
+--   counsel_reasoning_effort
+--   sovereign_counsel_notes
+--   nocturne_counsel_notes
+--
+-- OpenAI API key is NOT stored in SQL. It belongs only in the Supabase
+-- Edge Function secret named OPENAI_API_KEY.
 --
 -- Earlier core tables remain in production:
 -- profiles, game_entities, games, game_memberships, directives, scoring_rules,

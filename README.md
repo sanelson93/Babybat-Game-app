@@ -1,72 +1,69 @@
-# BabyBat Game Hub v3.0.0
+# BabyBat Game Hub v3.1.0 — Private Counsel
 
-V3 turns BabyBat from a score tracker into the official game headquarters for the Sovereign Circle ↔ Nocturne Collective game.
+V3.1 adds the first real OpenAI-powered Counsel layer directly inside BabyBat while preserving the V3 game hub, Mail, evidence, status, scoring, rewards, and Site Admin controls.
 
-## What is live in V3
+## New in v3.1
 
-### Organization availability
-- Status is organization-level, never person-level.
-- **Sovereign Circle — OPEN / CLOSED**
-- **Nocturne Collective — OPEN / CLOSED**
-- Each side can control its own status; Shawn's Site Admin mode can control both.
-- Realtime across devices.
+### Sovereign Counsel
+- Private to the authenticated Sovereign Circle BabyBat account.
+- Persistent conversation history stored separately from Nocturne.
+- Uses the OpenAI Responses API with a persistent OpenAI Conversation.
+- Default model: `gpt-5.6-sol` with medium reasoning.
+- Seeded with the Sovereign Circle operating model, member specialties, Scales/Sigma/Sphinx responsibilities, Shawn-final-authority rule, and no-emoji drafting preference.
+- Every response receives a fresh BabyBat snapshot: organization OPEN/CLOSED status, live score, rewards, directives, scoring rules, rulebook, relevant Mail, evidence records, and rosters.
 
-### BabyBat Mail
-- New **Mail** tab for official game correspondence.
-- Inbox + Sent views, unread state, threaded replies, categories (message, directive, submission, scoring, ruling, reward).
-- Game-facing identities use the configured Sovereign / Nocturne addresses rather than personal email addresses.
-- Mail is database-backed and realtime.
-- Moxie can issue a Directive and send it to Sovereign Circle through Mail in one action.
+### Nocturne Counsel
+- Private to the authenticated Nocturne Collective BabyBat account.
+- Separate thread, messages, OpenAI Conversation ID, and permissions from Sovereign Counsel.
+- Uses live Nocturne roster / Game Master state and current BabyBat game data.
+- Moxie remains the human final authority.
 
-### Photo evidence
-- Active Directives can accept native photo submissions.
-- Browser-side image compression before upload (admin configurable max edge + quality).
-- Private Supabase Storage bucket; evidence is not public.
-- Moxie can review / approve / reject evidence.
-- Recipient can **Save Photo** using the device share/save flow.
-- Saving can automatically mark the file for cleanup after an admin-configured grace period.
-- The evidence record remains after the stored photo is purged.
+### Human approval stays mandatory
+Counsel can analyze and draft, but it does not silently mutate game state.
+- Any assistant answer can be moved into a BabyBat Mail compose screen for human review.
+- Nocturne can move a Counsel response into a Directive approval screen and edit it before **Issue + Send**.
+- Evidence review cards and photo viewer now include **Ask Counsel**. The selected private evidence photo is sent to OpenAI only when the user explicitly invokes that action.
+- Status, scoring, rewards, directives, and Mail still use BabyBat's existing explicit controls.
 
-### Shawn-only Owner Control Center
-Only Shawn's Site Admin mode sees the owner controls. Moxie's Game Master UI does not.
+### Counsel Site Admin controls
+Shawn's Site Admin Control Center can change without redeploying:
+- Counsel ON/OFF
+- Model: GPT-5.6 Sol / Terra / Luna
+- Reasoning effort
+- Sovereign instruction supplement
+- Nocturne instruction supplement
+- Counsel connection test / diagnostic status
 
-Current no-code controls include:
-- Game name
-- Reward interval
-- Scoring point values
-- Mail on/off
-- Sovereign / Nocturne game-mail display addresses
-- Photo compression resolution
-- Photo compression quality
-- Auto-cleanup after recipient save
-- Photo cleanup grace period
-- SMS master switch (provider still required)
-- Storage health / eligible cleanup
-- Diagnostics / version / record counts
+The OpenAI API key is intentionally **not** stored in the browser or `app_settings`.
 
-### ChatGPT bridge foundation
-V3 includes authenticated database RPCs intended for a future ChatGPT app/MCP bridge:
-- `babybat_snapshot()` — current game state, organization status, active Directives, score, unread/recent mail, submissions
-- `babybat_send_mail(subject, body, category)` — official game mail from the authenticated organization
-- `babybat_set_status(status)` — set the authenticated organization OPEN/CLOSED
+## Required one-time OpenAI setup
+The v3.1 database tables and `babybat-counsel` Edge Function are already deployed in the dedicated BabyBat Supabase project.
 
-The current ChatGPT Plus account cannot yet be assumed to support attaching a private full-write MCP app to an existing personal chat. V3 does **not** depend on that capability; the backend is prepared so the connector can be attached later without redesigning the game.
+To activate AI responses, add this Supabase Edge Function secret in the BabyBat project:
 
-### Notification foundation
-- New Mail and new evidence create notification-event records automatically.
-- The SMS switch and queue are present, but a real SMS provider (for example Twilio) still needs credentials/provider setup before texts can be sent.
+`OPENAI_API_KEY=<your OpenAI Platform API key>`
 
-### Stability carried forward from v2.5
-- Forgot Password + recovery flow
-- Show/hide password
-- Resend email confirmation
-- Correct Shawn/Moxie role isolation
-- Shawn-only Player/Admin switch
-- Moxie-only purple Game Master view
-- Flexible pasted-ledger scoring parser
-- Permanent transaction ledger + automatic reward unlocking
-- Network-first core files and PWA cache hardening
-- Visible `BABYBAT v3.0.0` label
+The API key must come from the OpenAI API Platform and API usage is billed separately from ChatGPT Plus. Do not put the key in `config.js`, Site Admin, localStorage, or source control.
+
+After adding the secret:
+1. Open BabyBat as Shawn.
+2. Player/Admin → Admin.
+3. Owner Control Center → **Private Counsel Engine**.
+4. Tap **Test Counsel Connection**.
+5. It should show `READY`.
+
+No Vercel redeploy is required after adding the Supabase secret.
+
+## V3 features retained
+- Organization-level **Sovereign Circle OPEN/CLOSED** and **Nocturne Collective OPEN/CLOSED**.
+- BabyBat Mail with Inbox/Sent/unread/threaded replies/categories.
+- Directive issue + Mail delivery.
+- Private photo evidence, browser compression, review, save, configurable post-save cleanup.
+- Shawn-only Owner Control Center.
+- Bulk scoring ledger parser/importer.
+- Permanent score ledger and rewards.
+- Password recovery, confirmation resend, role isolation, Shawn Player/Admin switch, Moxie purple-only view.
+- SMS event queue remains ready for Twilio/provider setup.
 
 ## Production Auth URL requirements
 Supabase Authentication → URL Configuration:
@@ -74,11 +71,18 @@ Supabase Authentication → URL Configuration:
 - Redirect URL: `https://game-app.vercel.app/**`
 
 ## Deployment
-Upload the contents of this ZIP to the Vercel deployment root. All image assets are intentionally flat beside `index.html`; no assets folder is required.
+Upload the contents of this ZIP to the Vercel deployment root. All image assets remain intentionally flat beside `index.html`.
 
 ## Security
-- Browser uses only the Supabase publishable key.
-- RLS protects all public game data.
-- Photo storage bucket is private.
-- No service-role key is present in the frontend.
+- Frontend contains only the Supabase publishable key.
+- OpenAI secret remains server-side in Supabase Edge Function secrets.
+- The `babybat-counsel` function requires a valid Supabase JWT.
+- Counsel rows use RLS and are scoped to the authenticated user.
+- No Site Admin preview can read Moxie's private Nocturne Counsel.
+- Evidence images remain in the private `game-evidence` bucket.
 - The separate BSB fantasy-football project is not used or modified by BabyBat.
+
+## Known external setup still pending
+- `OPENAI_API_KEY` must be added to activate Counsel responses.
+- Twilio/SMS provider credentials still need to be configured before SMS sends.
+- Supabase Auth still reports the project-level warning that Leaked Password Protection is disabled; this is a Dashboard Auth setting.
