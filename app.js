@@ -1,4 +1,4 @@
-const APP_VERSION = '3.1.5';
+const APP_VERSION = '3.1.6';
 const UI_STORAGE = 'babybat-game-hub-ui-v312';
 const CONFIG = window.BABYBAT_CONFIG;
 const { createClient } = window.supabase;

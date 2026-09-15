@@ -1,0 +1,75 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
+  <meta name="theme-color" content="#120d17" />
+  <title>BabyBat Game Hub — SMS Notifications</title>
+  <link rel="icon" type="image/png" href="babybat-icon-192.png?v=3.1.5" />
+  <style>
+    :root{--bg:#09090d;--panel:#111117;--panel2:#17131d;--text:#f3f0f5;--muted:#aaa4b3;--silver:#d8d4dc;--purple:#b75cff;--purple2:#7d35ad;--line:#3c3346;--green:#4ad487}
+    *{box-sizing:border-box}html,body{margin:0;background:radial-gradient(circle at 50% -10%,#25152f 0,#0b0a10 37%,#07080b 100%);color:var(--text);font-family:Inter,ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;min-height:100%}
+    body:before{content:"";position:fixed;inset:0;pointer-events:none;background:linear-gradient(120deg,transparent 0 48%,rgba(183,92,255,.035) 50%,transparent 52% 100%)}
+    main{width:min(780px,calc(100% - 28px));margin:0 auto;padding:36px 0 56px}.brand{text-align:center;margin-bottom:24px}.brand img{width:132px;height:132px;object-fit:contain;filter:drop-shadow(0 0 22px rgba(183,92,255,.18))}.eyebrow{font-size:12px;letter-spacing:.24em;text-transform:uppercase;color:#c788f2;font-weight:800;margin:8px 0}.brand h1{font-family:Georgia,"Times New Roman",serif;font-size:clamp(34px,7vw,50px);margin:4px 0 6px}.brand p{color:var(--muted);margin:0 auto;max-width:620px;line-height:1.6}
+    .card{background:linear-gradient(180deg,rgba(23,19,29,.96),rgba(13,13,18,.98));border:1px solid var(--line);border-radius:22px;padding:24px;margin:16px 0;box-shadow:0 18px 50px rgba(0,0,0,.26),inset 0 1px 0 rgba(255,255,255,.035)}
+    .card h2{font-family:Georgia,"Times New Roman",serif;font-size:25px;margin:0 0 12px}.card h3{font-size:15px;margin:21px 0 8px;color:#e5d3f1}.card p,.card li{color:#c6c0cc;line-height:1.65;font-size:15px}.card ul{padding-left:20px}.badge{display:inline-flex;gap:8px;align-items:center;border:1px solid #754b8c;background:rgba(183,92,255,.08);border-radius:999px;padding:8px 12px;color:#e4c7f7;font-size:12px;font-weight:800;letter-spacing:.08em;text-transform:uppercase}.dot{width:8px;height:8px;background:var(--green);border-radius:50%;box-shadow:0 0 10px rgba(74,212,135,.6)}
+    .consent{border-left:3px solid var(--purple);padding:14px 16px;background:rgba(183,92,255,.055);border-radius:0 14px 14px 0;color:#eee9f2;line-height:1.65}.sample{background:#09090d;border:1px solid #2d2833;border-radius:14px;padding:14px 16px;color:#ddd7e2;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:13px;line-height:1.55}.links{display:flex;gap:10px;flex-wrap:wrap;margin-top:16px}.links a{color:#f0d9ff;text-decoration:none;border:1px solid #5b3b6e;border-radius:999px;padding:9px 13px;background:rgba(183,92,255,.07)}.links a:hover{background:rgba(183,92,255,.14)}
+    .notice{display:flex;gap:12px;align-items:flex-start}.notice strong{color:#fff}.small{font-size:13px!important;color:#918a98!important}.footer{text-align:center;color:#7e7785;font-size:12px;padding:18px 0 0}.footer a{color:#bfa6ce}
+    @media(max-width:520px){main{padding-top:22px}.card{padding:19px;border-radius:18px}.brand img{width:112px;height:112px}}
+  </style>
+</head>
+<body>
+<main>
+  <section class="brand">
+    <img src="babybat-logo.webp" alt="BabyBat Game Hub logo" />
+    <div class="eyebrow">BabyBat Game Hub</div>
+    <h1>SMS Notifications</h1>
+    <p>BabyBat is a private, invitation-only game platform for adult participants. SMS is used only for opted-in transactional game and account notifications.</p>
+  </section>
+
+  <section class="card">
+    <span class="badge"><span class="dot"></span> Transactional alerts only</span>
+    <h2 style="margin-top:15px">How BabyBat uses text messaging</h2>
+    <p>Participants may choose to receive SMS alerts so they do not have to keep the BabyBat app open. Messages are limited to game and account events such as:</p>
+    <ul>
+      <li>new BabyBat Mail or a reply</li>
+      <li>a newly issued Directive or submission update</li>
+      <li>a scoring notice or reward unlock</li>
+      <li>an organization OPEN/CLOSED status change</li>
+      <li>a deadline or other requested game reminder</li>
+    </ul>
+    <p><strong>No marketing or promotional advertising messages are sent through this program.</strong></p>
+  </section>
+
+  <section class="card" id="opt-in">
+    <h2>SMS opt-in and consent</h2>
+    <p>SMS consent is collected from the participant before notifications are enabled. In BabyBat, the participant provides their mobile number, actively enables SMS notifications, and accepts the SMS disclosure shown with the control.</p>
+    <div class="consent"><strong>Consent language:</strong><br />By enabling SMS notifications, I agree to receive recurring transactional text messages from BabyBat Game Hub at the mobile number I provide, including game, Mail, Directive, scoring, reward, status, and account notifications. Message frequency varies. Message and data rates may apply. Reply STOP to opt out and HELP for help. Consent is optional and is not required to use BabyBat.</div>
+    <p class="small">Consent to receive SMS is kept separate from acceptance of BabyBat's general Terms or Privacy Policy.</p>
+  </section>
+
+  <section class="card">
+    <h2>Sample messages</h2>
+    <div class="sample">BabyBat: You have new game Mail waiting. Open BabyBat to review it. Reply STOP to opt out, HELP for help.</div>
+    <div class="sample" style="margin-top:10px">BabyBat: A new Directive is available. Open BabyBat to review and respond. Reply STOP to opt out, HELP for help.</div>
+    <div class="sample" style="margin-top:10px">BabyBat: A scoring update was posted to your game. Open BabyBat for details. Reply STOP to opt out, HELP for help.</div>
+  </section>
+
+  <section class="card">
+    <h2>Opt-out and help</h2>
+    <div class="notice"><div>🛑</div><p style="margin-top:0"><strong>STOP:</strong> Reply STOP at any time to stop BabyBat SMS notifications. Participants may also disable SMS from their BabyBat notification settings.</p></div>
+    <div class="notice"><div>ℹ️</div><p style="margin-top:0"><strong>HELP:</strong> Reply HELP for assistance and information about the BabyBat notification program.</p></div>
+    <p>Message frequency varies based on game activity. Carrier message and data rates may apply.</p>
+  </section>
+
+  <section class="card">
+    <h2>Mobile information & privacy</h2>
+    <p>Mobile phone numbers, SMS consent records, and opt-in information are used only to provide requested BabyBat notifications and operate the messaging program. BabyBat does not sell mobile information and does not share mobile information, SMS consent, or opt-in data with third parties for their own marketing or promotional purposes.</p>
+    <p>Information may be provided to service providers strictly as necessary to deliver or operate the messaging service, such as the SMS delivery provider.</p>
+    <div class="links"><a href="privacy">Privacy Policy</a><a href="terms">Terms &amp; SMS Terms</a><a href="/">BabyBat Login</a></div>
+  </section>
+
+  <div class="footer">BabyBat Game Hub · private invitation-only platform · SMS participation is optional.</div>
+</main>
+</body>
+</html>

@@ -2,13 +2,91 @@
   "cleanUrls": true,
   "trailingSlash": false,
   "headers": [
-    {"source":"/index.html","headers":[{"key":"Cache-Control","value":"no-cache, no-store, must-revalidate"}]},
-    {"source":"/app.js","headers":[{"key":"Cache-Control","value":"no-cache, no-store, must-revalidate"}]},
-    {"source":"/styles.css","headers":[{"key":"Cache-Control","value":"no-cache, no-store, must-revalidate"}]},
-    {"source":"/config.js","headers":[{"key":"Cache-Control","value":"no-cache, no-store, must-revalidate"}]},
-    {"source":"/sw.js","headers":[{"key":"Cache-Control","value":"no-cache, no-store, must-revalidate"}]},
-    {"source":"/sms.html","headers":[{"key":"Cache-Control","value":"no-cache, no-store, must-revalidate"}]},
-    {"source":"/privacy.html","headers":[{"key":"Cache-Control","value":"no-cache, no-store, must-revalidate"}]},
-    {"source":"/terms.html","headers":[{"key":"Cache-Control","value":"no-cache, no-store, must-revalidate"}]}
+    {
+      "source": "/index.html",
+      "headers": [
+        {
+          "key": "Cache-Control",
+          "value": "no-cache, no-store, must-revalidate"
+        }
+      ]
+    },
+    {
+      "source": "/app.js",
+      "headers": [
+        {
+          "key": "Cache-Control",
+          "value": "no-cache, no-store, must-revalidate"
+        }
+      ]
+    },
+    {
+      "source": "/styles.css",
+      "headers": [
+        {
+          "key": "Cache-Control",
+          "value": "no-cache, no-store, must-revalidate"
+        }
+      ]
+    },
+    {
+      "source": "/config.js",
+      "headers": [
+        {
+          "key": "Cache-Control",
+          "value": "no-cache, no-store, must-revalidate"
+        }
+      ]
+    },
+    {
+      "source": "/sw.js",
+      "headers": [
+        {
+          "key": "Cache-Control",
+          "value": "no-cache, no-store, must-revalidate"
+        }
+      ]
+    },
+    {
+      "source": "/sms.html",
+      "headers": [
+        {
+          "key": "Cache-Control",
+          "value": "no-cache, no-store, must-revalidate"
+        }
+      ]
+    },
+    {
+      "source": "/privacy.html",
+      "headers": [
+        {
+          "key": "Cache-Control",
+          "value": "no-cache, no-store, must-revalidate"
+        }
+      ]
+    },
+    {
+      "source": "/terms.html",
+      "headers": [
+        {
+          "key": "Cache-Control",
+          "value": "no-cache, no-store, must-revalidate"
+        }
+      ]
+    }
+  ],
+  "rewrites": [
+    {
+      "source": "/sms",
+      "destination": "/sms.html"
+    },
+    {
+      "source": "/privacy",
+      "destination": "/privacy.html"
+    },
+    {
+      "source": "/terms",
+      "destination": "/terms.html"
+    }
   ]
 }
