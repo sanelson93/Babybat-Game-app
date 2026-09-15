@@ -1,4 +1,13 @@
-# BabyBat Game Hub v3.1.7
+# BabyBat Game Hub v3.1.8
+### SMS + Push notifications
+- SMS stays in the product and keeps its Twilio/compliance path.
+- Per-account SMS preference, phone number, and explicit consent are stored in Supabase.
+- Push notifications use standard Web Push with a service worker and a server-generated VAPID key pair.
+- On iPhone/iPad, BabyBat must be installed to the Home Screen before Web Push can be enabled.
+- Push can be enabled/disabled and tested from Profile / Account.
+- Mail and photo submissions dispatch push from the existing notification queue; scoring and submission review also create push alerts.
+- The Site Admin integration card has independent SMS and Push master switches.
+
 
 ## Brand / profile refresh
 - Uses the new official BabyBat silver / black / purple crest as the shared game logo.
@@ -85,8 +94,8 @@ No Vercel redeploy is required after adding the Supabase secret.
 
 ## Production Auth URL requirements
 Supabase Authentication → URL Configuration:
-- Site URL: `https://game-app.vercel.app/`
-- Redirect URL: `https://game-app.vercel.app/**`
+- Site URL: `https://babybat-game-app.vercel.app/`
+- Redirect URL: `https://babybat-game-app.vercel.app/**`
 
 ## Deployment
 Upload the contents of this ZIP to the Vercel deployment root. All image assets remain intentionally flat beside `index.html`.
@@ -101,11 +110,11 @@ Upload the contents of this ZIP to the Vercel deployment root. All image assets 
 - The separate BSB fantasy-football project is not used or modified by BabyBat.
 
 ## Known external setup still pending
-- `OPENAI_API_KEY` must be added to activate Counsel responses.
+- The OpenAI API key is already configured; OpenAI API billing/credits must remain active for Counsel responses.
 - Twilio/SMS provider credentials still need to be configured before SMS sends.
 - Supabase Auth still reports the project-level warning that Leaked Password Protection is disabled; this is a Dashboard Auth setting.
 
-## v3.1.4 Counsel reliability fix
+## v3.1.3 Counsel reliability fix
 - Counsel user messages are persisted before the OpenAI response is requested, so they never disappear on provider errors.
 - Failed AI calls are visibly marked in the thread with a human-readable reason.
 - Site Admin **Test Counsel Connection** runs a tiny live model request instead of only checking whether a secret exists.
@@ -126,7 +135,17 @@ Upload the contents of this ZIP to the Vercel deployment root. All image assets 
 - For Twilio's website field after deployment, use `https://babybat-game-app.vercel.app/sms`.
 
 
-## v3.1.7
+## v3.1.7 — iPhone Counsel composer fix
 - Fixes the iPhone Counsel composer being covered by the bottom navigation while the virtual keyboard is open.
 - Temporarily moves the bottom navigation out of the way during Counsel typing.
 - Auto-grows the Counsel text box up to a readable limit while keeping the Send button visible.
+
+## v3.1.8 — SMS + Push notifications
+- Keeps the existing Twilio/SMS path; toll-free registration can remain in review while the app stores each user's explicit SMS preference and mobile number.
+- Adds Web Push for installed BabyBat PWAs with per-device enable/disable and a test-push control.
+- iPhone/iPad users are guided to install BabyBat to the Home Screen before enabling push.
+- Adds server-side VAPID key generation/storage and the authenticated `babybat-push` Edge Function. The VAPID private key never ships to the browser.
+- Existing Mail and photo-submission notification events can dispatch push; scoring and evidence-review actions also create push alerts.
+- Adds independent Site Admin master switches for Push and SMS.
+- Adds separate push delivery status/error fields to the notification event queue.
+- SMS does not send until Twilio approves the number and provider credentials/sending backend are configured.

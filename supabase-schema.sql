@@ -10,8 +10,13 @@
 --   notification_events
 --   counsel_threads
 --   counsel_messages
+--   user_notification_preferences
+--   push_subscriptions
+--   push_server_config (server-only VAPID keypair)
 --   private game-evidence Storage bucket + RLS
 --   babybat-counsel Supabase Edge Function (JWT required)
+--   babybat-ai-usage Supabase Edge Function (JWT required)
+--   babybat-push Supabase Edge Function (JWT required)
 --   BabyBat bridge RPCs: babybat_snapshot(), babybat_send_mail(), babybat_set_status()
 --
 -- Counsel RLS:
@@ -28,6 +33,14 @@
 --
 -- OpenAI API key is NOT stored in SQL. It belongs only in the Supabase
 -- Edge Function secret named OPENAI_API_KEY.
+--
+-- Push delivery notes:
+--   - notification_events carries independent sms_status/push_status fields.
+--   - users manage their own SMS/push preference row through RLS.
+--   - push endpoint/keys are registered through the authenticated Edge Function.
+--   - push_server_config is not readable by anon/authenticated clients; only the
+--     public VAPID key is returned by babybat-push.
+--   - Twilio credentials remain pending and must stay server-side when added.
 --
 -- Earlier core tables remain in production:
 -- profiles, game_entities, games, game_memberships, directives, scoring_rules,

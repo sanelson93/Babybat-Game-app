@@ -1,5 +1,5 @@
-const CACHE='babybat-v317-keyboard-safe';
-const CORE=['./','./index.html','./styles.css?v=3.1.7','./config.js?v=3.1.7','./app.js?v=3.1.7','./manifest.json?v=3.1.7'];
+const CACHE='babybat-v318-sms-push';
+const CORE=['./','./index.html','./styles.css?v=3.1.8','./config.js?v=3.1.8','./app.js?v=3.1.8','./manifest.json?v=3.1.8'];
 const ASSETS=['./nc-cress.webp','./nc-dusk.webp','./nc-eclipse.webp','./nc-ember.webp','./nc-jinx.webp','./nc-moxie.webp','./nc-nyx.webp','./nc-sable.webp','./nc-selene.webp','./nc-vega.webp','./nocturne-collective-logo.webp','./babybat-logo.webp','./babybat-icon-192.png','./babybat-icon-512.png','./sc-silk.webp','./sc-sage.webp','./sc-saint.webp','./sc-scales.webp','./sc-shawn.webp','./sc-sigma.webp','./sc-sinister.webp','./sc-sir.webp','./sc-sphinx.webp','./sovereign-circle-logo.webp'];
 self.addEventListener('install',event=>event.waitUntil((async()=>{
   const cache=await caches.open(CACHE);
@@ -38,5 +38,39 @@ self.addEventListener('fetch',event=>{
       return response;
     }).catch(()=>null);
     return cached||(await network)||Response.error();
+  })());
+});
+
+
+// v3.1.8 — Web Push delivery for installed BabyBat PWAs.
+self.addEventListener('push',event=>{
+  let payload={title:'BabyBat',body:'New game activity',url:'./',tag:'babybat'};
+  try{
+    if(event.data){
+      const parsed=event.data.json();
+      if(parsed&&typeof parsed==='object') payload={...payload,...parsed};
+    }
+  }catch{
+    try{if(event.data)payload.body=event.data.text()||payload.body}catch{}
+  }
+  const options={
+    body:payload.body||'',
+    icon:'./babybat-icon-192.png',
+    badge:'./babybat-icon-192.png',
+    tag:payload.tag||'babybat',
+    renotify:true,
+    data:{url:payload.url||'./'}
+  };
+  event.waitUntil(self.registration.showNotification(payload.title||'BabyBat',options));
+});
+self.addEventListener('notificationclick',event=>{
+  event.notification.close();
+  const target=new URL(event.notification?.data?.url||'./',self.location.origin).href;
+  event.waitUntil((async()=>{
+    const windows=await self.clients.matchAll({type:'window',includeUncontrolled:true});
+    for(const client of windows){
+      if('focus' in client){await client.focus();try{if('navigate' in client)await client.navigate(target)}catch{};return}
+    }
+    if(self.clients.openWindow)return self.clients.openWindow(target);
   })());
 });
