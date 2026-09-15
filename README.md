@@ -1,4 +1,4 @@
-# BabyBat Game Hub v3.1.4
+# BabyBat Game Hub v3.1.5
 
 ## Brand / profile refresh
 - Uses the new official BabyBat silver / black / purple crest as the shared game logo.
@@ -118,3 +118,9 @@ Upload the contents of this ZIP to the Vercel deployment root. All image assets 
 - Successful Counsel replies are recorded automatically through the secure `babybat-ai-usage` Edge Function.
 - Site Admin can refresh/backfill stored Counsel response IDs.
 - Costs are estimates from OpenAI token usage and current public model pricing; OpenAI Platform billing remains authoritative.
+
+## v3.1.5 — public SMS verification pages
+- Adds public `/sms`, `/privacy`, and `/terms` pages for Twilio review without exposing private game data.
+- The SMS page documents BabyBat's transactional notification use case, opt-in language, STOP/HELP behavior, message-frequency disclosure, sample messages, and mobile-data privacy language.
+- The main authenticated game remains unchanged; no database migration is required for this release.
+- For Twilio's website field after deployment, use `https://game-app.vercel.app/sms`.
