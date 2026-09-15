@@ -1,4 +1,4 @@
-# BabyBat Game Hub v3.1.6
+# BabyBat Game Hub v3.1.7
 
 ## Brand / profile refresh
 - Uses the new official BabyBat silver / black / purple crest as the shared game logo.
@@ -123,4 +123,10 @@ Upload the contents of this ZIP to the Vercel deployment root. All image assets 
 - Adds public `/sms`, `/privacy`, and `/terms` pages for Twilio review without exposing private game data.
 - The SMS page documents BabyBat's transactional notification use case, opt-in language, STOP/HELP behavior, message-frequency disclosure, sample messages, and mobile-data privacy language.
 - The main authenticated game remains unchanged; no database migration is required for this release.
-- For Twilio's website field after deployment, use `https://game-app.vercel.app/sms`.
+- For Twilio's website field after deployment, use `https://babybat-game-app.vercel.app/sms`.
+
+
+## v3.1.7
+- Fixes the iPhone Counsel composer being covered by the bottom navigation while the virtual keyboard is open.
+- Temporarily moves the bottom navigation out of the way during Counsel typing.
+- Auto-grows the Counsel text box up to a readable limit while keeping the Send button visible.

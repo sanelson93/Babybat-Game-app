@@ -1,4 +1,4 @@
-const APP_VERSION = '3.1.6';
+const APP_VERSION = '3.1.7';
 const UI_STORAGE = 'babybat-game-hub-ui-v312';
 const CONFIG = window.BABYBAT_CONFIG;
 const { createClient } = window.supabase;
@@ -412,7 +412,7 @@ function counselPage(){
   ${needsKey?`<section class="section"><div class="notice">${isAdminAccount()?`Counsel is built, but the OpenAI API key has not been added to Supabase yet. Add the server-side <strong>OPENAI_API_KEY</strong> secret, then tap Test Counsel in Site Admin.`:`Counsel is being configured by Site Admin. Your private room and history are ready for activation.`}</div></section>`:''}
   <section class="section counsel-quick"><div class="section-head"><h2>Quick Ask</h2><span>live BabyBat context</span></div><div class="counsel-chips">${prompts.map(([label,prompt])=>`<button ${configured&&!counselSending?'':'disabled'} onclick="sendCounselPrompt(${JSON.stringify(prompt).replace(/"/g,'&quot;')})">${esc(label)}</button>`).join('')}</div></section>
   <section class="section counsel-thread"><div class="counsel-privacy">This room is private to this BabyBat account. Relevant live game data is sent to OpenAI for each answer; opposing Counsel history is never shared.</div>${counselLastError?`<div class="notice counsel-error"><b>Counsel connection problem</b><br>${esc(counselLastError)}</div>`:''}<div id="counselMessages" class="counsel-messages">${history.length?history.map(counselMessageCard).join(''):`<div class="counsel-welcome"><b>${esc(counselName())} is standing by.</b><span>Ask about directives, Mail, scoring, rewards, rules, evidence, or strategy.</span></div>`}${pending}${counselSending?`<div class="counsel-thinking"><i></i><i></i><i></i><span>Counsel is working…</span></div>`:''}</div></section>
-  <section class="counsel-composer"><textarea id="counselInput" class="input" rows="2" maxlength="12000" ${configured&&!counselSending?'':'disabled'} placeholder="Ask ${esc(counselName())}…"></textarea><button id="counselSend" class="primary" ${configured&&!counselSending?'':'disabled'} onclick="askCounsel()">Send</button></section>
+  <section class="counsel-composer"><textarea id="counselInput" class="input" rows="2" maxlength="12000" ${configured&&!counselSending?'':'disabled'} placeholder="Ask ${esc(counselName())}…" aria-label="Message ${esc(counselName())}"></textarea><button id="counselSend" class="primary" ${configured&&!counselSending?'':'disabled'} onclick="askCounsel()">Send</button></section>
   <section class="section counsel-footer"><button class="ghost" ${configured&&!counselSending?'':'disabled'} onclick="resetCounsel()">Reset private Counsel history</button></section></main>`;
 }
 
@@ -1200,6 +1200,41 @@ window.importBulkLedger=async()=>{
   }catch(e){toast(e?.message||String(e));if(btn){btn.disabled=false;btn.textContent='Import Rows'}}
 }
 function toast(msg){document.querySelector('.toast')?.remove();const el=document.createElement('div');el.className='toast';el.textContent=msg;document.body.appendChild(el);setTimeout(()=>el.remove(),2400)}
+
+// v3.1.7 — iPhone/virtual-keyboard-safe Counsel composer.
+function sizeCounselInput(el){
+  if(!el||el.id!=='counselInput')return;
+  el.style.height='auto';
+  const next=Math.max(48,Math.min(el.scrollHeight,156));
+  el.style.height=`${next}px`;
+  el.style.overflowY=el.scrollHeight>156?'auto':'hidden';
+}
+function syncCounselKeyboard(){
+  const input=document.getElementById('counselInput');
+  const focused=!!input&&document.activeElement===input;
+  document.body.classList.toggle('counsel-keyboard-open',focused);
+  if(focused){
+    sizeCounselInput(input);
+    requestAnimationFrame(()=>input.scrollIntoView({block:'nearest',inline:'nearest'}));
+  }
+}
+document.addEventListener('focusin',e=>{
+  if(e.target?.id!=='counselInput')return;
+  document.body.classList.add('counsel-keyboard-open');
+  sizeCounselInput(e.target);
+  setTimeout(syncCounselKeyboard,60);
+});
+document.addEventListener('input',e=>{if(e.target?.id==='counselInput')sizeCounselInput(e.target)});
+document.addEventListener('focusout',e=>{
+  if(e.target?.id!=='counselInput')return;
+  setTimeout(syncCounselKeyboard,80);
+});
+window.visualViewport?.addEventListener('resize',()=>{
+  if(document.activeElement?.id==='counselInput')requestAnimationFrame(syncCounselKeyboard);
+});
+window.visualViewport?.addEventListener('scroll',()=>{
+  if(document.activeElement?.id==='counselInput')requestAnimationFrame(syncCounselKeyboard);
+});
 
 if('serviceWorker' in navigator)window.addEventListener('load',async()=>{try{const reg=await navigator.serviceWorker.register('sw.js',{updateViaCache:'none'});reg.update().catch(()=>{});}catch{}});
 boot();

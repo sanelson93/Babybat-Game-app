@@ -1,5 +1,5 @@
-const CACHE='babybat-v315-sms-public';
-const CORE=['./','./index.html','./styles.css?v=3.1.6','./config.js?v=3.1.6','./app.js?v=3.1.6','./manifest.json?v=3.1.6'];
+const CACHE='babybat-v317-keyboard-safe';
+const CORE=['./','./index.html','./styles.css?v=3.1.7','./config.js?v=3.1.7','./app.js?v=3.1.7','./manifest.json?v=3.1.7'];
 const ASSETS=['./nc-cress.webp','./nc-dusk.webp','./nc-eclipse.webp','./nc-ember.webp','./nc-jinx.webp','./nc-moxie.webp','./nc-nyx.webp','./nc-sable.webp','./nc-selene.webp','./nc-vega.webp','./nocturne-collective-logo.webp','./babybat-logo.webp','./babybat-icon-192.png','./babybat-icon-512.png','./sc-silk.webp','./sc-sage.webp','./sc-saint.webp','./sc-scales.webp','./sc-shawn.webp','./sc-sigma.webp','./sc-sinister.webp','./sc-sir.webp','./sc-sphinx.webp','./sovereign-circle-logo.webp'];
 self.addEventListener('install',event=>event.waitUntil((async()=>{
   const cache=await caches.open(CACHE);
