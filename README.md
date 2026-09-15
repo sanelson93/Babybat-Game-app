@@ -1,4 +1,4 @@
-# BabyBat Game Hub v3.1.2
+# BabyBat Game Hub v3.1.3
 
 ## Brand / profile refresh
 - Uses the new official BabyBat silver / black / purple crest as the shared game logo.
@@ -104,3 +104,9 @@ Upload the contents of this ZIP to the Vercel deployment root. All image assets 
 - `OPENAI_API_KEY` must be added to activate Counsel responses.
 - Twilio/SMS provider credentials still need to be configured before SMS sends.
 - Supabase Auth still reports the project-level warning that Leaked Password Protection is disabled; this is a Dashboard Auth setting.
+
+## v3.1.3 Counsel reliability fix
+- Counsel user messages are persisted before the OpenAI response is requested, so they never disappear on provider errors.
+- Failed AI calls are visibly marked in the thread with a human-readable reason.
+- Site Admin **Test Counsel Connection** runs a tiny live model request instead of only checking whether a secret exists.
+- Frontend reloads persisted Counsel history after an error.

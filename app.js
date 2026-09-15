@@ -1,4 +1,4 @@
-const APP_VERSION = '3.1.2';
+const APP_VERSION = '3.1.3';
 const UI_STORAGE = 'babybat-game-hub-ui-v312';
 const CONFIG = window.BABYBAT_CONFIG;
 const { createClient } = window.supabase;
@@ -122,6 +122,7 @@ let counselMessages = [];
 let counselHealth = 'unknown';
 let counselSending = false;
 let counselPendingText = '';
+let counselLastError = '';
 let mailMode = 'inbox';
 let realtimeChannel = null;
 let realtimeTimer = null;
@@ -391,7 +392,9 @@ function counselQuickPrompts(){
 function counselMessageCard(m){
   const assistant=m.role==='assistant';
   const evidence=m.metadata?.evidence_id;
-  return `<div class="counsel-msg ${assistant?'assistant':'user'}"><div class="counsel-msg-label">${assistant?esc(counselName()):esc(personLabel())}</div><div class="counsel-msg-body">${esc(m.content||'')}</div>${evidence?`<div class="counsel-evidence-tag">Photo evidence attached</div>`:''}${assistant?`<div class="counsel-actions"><button onclick="counselToMail('${esc(m.id)}')">Use in Mail</button>${counselSide()==='nocturne'?`<button onclick="counselToDirective('${esc(m.id)}')">Use as Directive</button>`:''}<button onclick="copyCounsel('${esc(m.id)}')">Copy</button></div>`:''}</div>`;
+  const failed=!assistant&&m.metadata?.delivery_status==='failed';
+  const failure=failed?(m.metadata?.error_message||'Counsel could not answer this message.'):'';
+  return `<div class="counsel-msg ${assistant?'assistant':'user'} ${failed?'failed':''}"><div class="counsel-msg-label">${assistant?esc(counselName()):esc(personLabel())}</div><div class="counsel-msg-body">${esc(m.content||'')}</div>${evidence?`<div class="counsel-evidence-tag">Photo evidence attached</div>`:''}${failed?`<div class="counsel-error-tag">Not answered · ${esc(failure)}</div>`:''}${assistant?`<div class="counsel-actions"><button onclick="counselToMail('${esc(m.id)}')">Use in Mail</button>${counselSide()==='nocturne'?`<button onclick="counselToDirective('${esc(m.id)}')">Use as Directive</button>`:''}<button onclick="copyCounsel('${esc(m.id)}')">Copy</button></div>`:''}</div>`;
 }
 function counselPage(){
   if(ui.demo) return `<main class="page"><section class="section"><div class="empty">Private AI Counsel is available only after signing into a live BabyBat account.</div></section></main>`;
@@ -404,7 +407,7 @@ function counselPage(){
   return `<main class="page counsel-page"><section class="counsel-hero ${side}"><div>${crest(side==='nocturne'?'nocturne':'sovereign')}<div><span class="eyebrow">PRIVATE AI STRATEGY ROOM</span><h2>${esc(counselName())}</h2><p>${side==='nocturne'?'Nocturne Collective only':'Sovereign Circle only'} · ${esc(model)}</p></div></div><span class="counsel-health ${configured?'ready':needsKey?'missing':'checking'}">${configured?'AI READY':needsKey?'SETUP NEEDED':'CHECKING'}</span></section>
   ${needsKey?`<section class="section"><div class="notice">${isAdminAccount()?`Counsel is built, but the OpenAI API key has not been added to Supabase yet. Add the server-side <strong>OPENAI_API_KEY</strong> secret, then tap Test Counsel in Site Admin.`:`Counsel is being configured by Site Admin. Your private room and history are ready for activation.`}</div></section>`:''}
   <section class="section counsel-quick"><div class="section-head"><h2>Quick Ask</h2><span>live BabyBat context</span></div><div class="counsel-chips">${prompts.map(([label,prompt])=>`<button ${configured&&!counselSending?'':'disabled'} onclick="sendCounselPrompt(${JSON.stringify(prompt).replace(/"/g,'&quot;')})">${esc(label)}</button>`).join('')}</div></section>
-  <section class="section counsel-thread"><div class="counsel-privacy">This room is private to this BabyBat account. Relevant live game data is sent to OpenAI for each answer; opposing Counsel history is never shared.</div><div id="counselMessages" class="counsel-messages">${history.length?history.map(counselMessageCard).join(''):`<div class="counsel-welcome"><b>${esc(counselName())} is standing by.</b><span>Ask about directives, Mail, scoring, rewards, rules, evidence, or strategy.</span></div>`}${pending}${counselSending?`<div class="counsel-thinking"><i></i><i></i><i></i><span>Counsel is working…</span></div>`:''}</div></section>
+  <section class="section counsel-thread"><div class="counsel-privacy">This room is private to this BabyBat account. Relevant live game data is sent to OpenAI for each answer; opposing Counsel history is never shared.</div>${counselLastError?`<div class="notice counsel-error"><b>Counsel connection problem</b><br>${esc(counselLastError)}</div>`:''}<div id="counselMessages" class="counsel-messages">${history.length?history.map(counselMessageCard).join(''):`<div class="counsel-welcome"><b>${esc(counselName())} is standing by.</b><span>Ask about directives, Mail, scoring, rewards, rules, evidence, or strategy.</span></div>`}${pending}${counselSending?`<div class="counsel-thinking"><i></i><i></i><i></i><span>Counsel is working…</span></div>`:''}</div></section>
   <section class="counsel-composer"><textarea id="counselInput" class="input" rows="2" maxlength="12000" ${configured&&!counselSending?'':'disabled'} placeholder="Ask ${esc(counselName())}…"></textarea><button id="counselSend" class="primary" ${configured&&!counselSending?'':'disabled'} onclick="askCounsel()">Send</button></section>
   <section class="section counsel-footer"><button class="ghost" ${configured&&!counselSending?'':'disabled'} onclick="resetCounsel()">Reset private Counsel history</button></section></main>`;
 }
@@ -754,7 +757,7 @@ async function boot(){
   if(session) await loadRemote(); else {remoteStatus='ready';render()}
 }
 
-function clearRemote(){game=null;membership=null;entities=[];organizationStatuses=[];organizationMembers=[];directives=[];pointTransactions=[];rewards=[];tiers=[];scoringRules=[];ruleSections=[];appSettings=[];mailMessages=[];evidenceSubmissions=[];notificationEvents=[];counselThread=null;counselMessages=[];counselHealth='unknown';profile=null;stopRealtime()}
+function clearRemote(){game=null;membership=null;entities=[];organizationStatuses=[];organizationMembers=[];directives=[];pointTransactions=[];rewards=[];tiers=[];scoringRules=[];ruleSections=[];appSettings=[];mailMessages=[];evidenceSubmissions=[];notificationEvents=[];counselThread=null;counselMessages=[];counselHealth='unknown';counselLastError='';profile=null;stopRealtime()}
 async function loadRemote({silent=false}={}){
   if(!session) return;
   if(!silent){remoteStatus='loading'; render();}
@@ -1015,15 +1018,31 @@ window.purgeEligiblePhotos=async()=>{const now=new Date();const rows=evidenceSub
 window.checkCounselHealth=async(showToast=false)=>{
   if(ui.demo||!session)return;
   counselHealth='checking';if(showToast)render();
-  try{const {data,error}=await db.functions.invoke('babybat-counsel',{body:{action:'health'}});if(error)throw error;counselHealth=data?.configured?'ready':'needs_key';if(showToast)toast(data?.configured?'Counsel connection is ready':'OpenAI API key is not configured yet')}catch(e){counselHealth='error';if(showToast)toast(e?.message||String(e))}render();
+  try{
+    const {data,error}=await db.functions.invoke('babybat-counsel',{body:{action:showToast?'diagnose':'health'}});
+    if(error)throw error;
+    if(!data?.configured){counselHealth='needs_key';counselLastError='';if(showToast)toast('OpenAI API key is not configured yet')}
+    else if(data?.ready===false){counselHealth='error';counselLastError=data?.error||'OpenAI is configured, but a live model request failed.';if(showToast)toast(counselLastError)}
+    else{counselHealth='ready';counselLastError='';if(showToast)toast(data?.tested?'Counsel passed a live OpenAI test':'Counsel connection is ready')}
+  }catch(e){counselHealth='error';counselLastError=e?.message||String(e);if(showToast)toast(counselLastError)}
+  render();
 }
 window.askCounsel=()=>{const el=document.getElementById('counselInput');const text=el?.value.trim()||'';if(!text){toast('Ask Counsel something first');return}sendCounselPrompt(text)}
 window.sendCounselPrompt=async(text,evidenceId='')=>{
   if(ui.demo||previewReadOnly()||counselSending)return;
   const msg=String(text||'').trim();if(!msg)return;
   if(counselHealth!=='ready'){toast('Counsel is not connected yet');return}
-  counselSending=true;counselPendingText=msg;render();requestAnimationFrame(scrollCounselBottom);
-  try{const {data,error}=await db.functions.invoke('babybat-counsel',{body:{action:'chat',message:msg,...(evidenceId?{evidence_id:evidenceId}:{})}});if(error)throw error;if(data?.error)throw new Error(data.error);counselPendingText='';counselSending=false;await loadRemote({silent:true});ui.activePage='counsel';saveUI();render();requestAnimationFrame(scrollCounselBottom)}catch(e){counselSending=false;counselPendingText='';render();toast(e?.message||String(e))}
+  counselSending=true;counselPendingText=msg;counselLastError='';render();requestAnimationFrame(scrollCounselBottom);
+  try{
+    const {data,error}=await db.functions.invoke('babybat-counsel',{body:{action:'chat',message:msg,...(evidenceId?{evidence_id:evidenceId}:{})}});
+    if(error)throw error;
+    if(data?.ok===false||data?.error)throw new Error(data?.error||'Counsel could not answer.');
+    counselPendingText='';counselSending=false;counselLastError='';await loadRemote({silent:true});ui.activePage='counsel';saveUI();render();requestAnimationFrame(scrollCounselBottom)
+  }catch(e){
+    counselSending=false;counselPendingText='';counselLastError=e?.message||String(e);
+    try{await loadRemote({silent:true})}catch(_){ }
+    ui.activePage='counsel';saveUI();render();requestAnimationFrame(scrollCounselBottom);toast(counselLastError)
+  }
 }
 window.scrollCounselBottom=()=>{const box=document.getElementById('counselMessages');if(box)box.scrollTop=box.scrollHeight}
 window.askCounselAboutEvidence=id=>{document.getElementById('photoModal')?.remove();ui.activePage='counsel';saveUI();render();sendCounselPrompt(counselSide()==='nocturne'?'Analyze this evidence photo against the Directive and current rules. Tell me what matters before I approve, reject, or score it.':'Analyze this submitted evidence photo against the active Directive and current rules. Tell me what the Sovereign Circle should notice.',id)}
@@ -1031,7 +1050,7 @@ window.counselToMail=id=>{const m=counselMessages.find(x=>x.id===id&&x.role==='a
 window.copyCounsel=async id=>{const m=counselMessages.find(x=>x.id===id);if(!m)return;try{await navigator.clipboard.writeText(m.content);toast('Counsel response copied')}catch{toast('Could not copy response')}}
 window.counselToDirective=id=>{const m=counselMessages.find(x=>x.id===id&&x.role==='assistant');if(!m||counselSide()!=='nocturne')return;document.body.insertAdjacentHTML('beforeend',`<div class="modal-back" id="counselDirectiveModal"><div class="modal"><div class="eyebrow">HUMAN APPROVAL REQUIRED</div><h3>Turn Counsel Draft into Directive</h3><p class="small-note">Review and edit everything before issuing. Counsel never sends this automatically.</p><div class="field"><label>Directive Code</label><input id="counselDirectiveCode" class="input" placeholder="SD-004"></div><div class="field"><label>Title</label><input id="counselDirectiveTitle" class="input" placeholder="Directive title"></div><div class="field"><label>Directive Text</label><textarea id="counselDirectiveBody" class="input" rows="10">${esc(m.content)}</textarea></div><div class="row"><button class="secondary" onclick="document.getElementById('counselDirectiveModal')?.remove()">Cancel</button><button class="primary" onclick="issueCounselDirective()">Issue + Send</button></div></div></div>`)}
 window.issueCounselDirective=async()=>{const code=normalizeDirectiveCode(document.getElementById('counselDirectiveCode')?.value||'');const title=document.getElementById('counselDirectiveTitle')?.value.trim()||'';const body=document.getElementById('counselDirectiveBody')?.value.trim()||'';if(!code||!title||!body){toast('Code, title and Directive text are required');return}document.getElementById('counselDirectiveModal')?.remove();const now=new Date().toISOString();const ins=await db.from('directives').insert({game_id:game.id,code,title,description:body,status:'issued',issued_by_user_id:session.user.id,issued_at:now}).select().single();if(ins.error){toast(ins.error.message);return}const sender=currentEntity(),recipient=otherGameEntity();const mid=crypto.randomUUID();const mail=await db.from('mail_messages').insert({id:mid,game_id:game.id,thread_id:mid,sender_entity_id:sender.id,recipient_entity_id:recipient.id,sender_user_id:session.user.id,subject:`${code} — ${title}`,body,category:'directive'});if(mail.error){toast(`Directive created, but Mail failed: ${mail.error.message}`);await loadRemote({silent:true});return}await loadRemote({silent:true});toast(`${code} issued to ${recipient.name}`)}
-window.resetCounsel=async()=>{if(counselSending)return;if(!confirm(`Reset ${counselName()}? This clears this BabyBat account's private Counsel history and starts a fresh AI conversation.`))return;try{const {data,error}=await db.functions.invoke('babybat-counsel',{body:{action:'reset'}});if(error)throw error;if(data?.error)throw new Error(data.error);counselThread=null;counselMessages=[];render();toast('Private Counsel history reset')}catch(e){toast(e?.message||String(e))}}
+window.resetCounsel=async()=>{if(counselSending)return;if(!confirm(`Reset ${counselName()}? This clears this BabyBat account's private Counsel history and starts a fresh AI conversation.`))return;try{const {data,error}=await db.functions.invoke('babybat-counsel',{body:{action:'reset'}});if(error)throw error;if(data?.error)throw new Error(data.error);counselThread=null;counselMessages=[];counselLastError='';render();toast('Private Counsel history reset')}catch(e){toast(e?.message||String(e))}}
 
 window.askRedeem=id=>{const r=rewardRows().find(x=>x.id===id);if(!r)return;document.body.insertAdjacentHTML('beforeend',`<div class="modal-back" id="redeemModal"><div class="modal"><h3>Use ${esc(r.tier)} Reward?</h3><p>This removes it from the active Reward Chest but keeps it permanently in Redeemed Rewards. ${isGMView()?"Moxie's redemption clears the same shared reward from Shawn's chest.":''}</p><div class="row"><button class="secondary" onclick="closeModal()">Cancel</button><button class="primary" onclick="redeem('${r.id}')">Confirm Use</button></div></div></div>`)}
 window.closeModal=()=>document.getElementById('redeemModal')?.remove()
