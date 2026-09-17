@@ -95,7 +95,7 @@ body[data-theme="nocturne"] .counsel-msg.user{background:#1b1425;border-color:#5
 .score-builder .bulk-title .badge{background:#21182f;border-color:#5b4380;color:#cebaff}.directive-number-row{display:grid;grid-template-columns:auto 1fr;align-items:center;gap:8px}.directive-number-row>span{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-weight:900;font-size:17px;color:#cbb9fa}.directive-number-row .input{font-size:17px;font-weight:850;letter-spacing:.08em}.directive-quick-picks{display:flex;gap:6px;overflow-x:auto;padding-top:7px;scrollbar-width:none}.directive-quick-picks::-webkit-scrollbar{display:none}.directive-quick-picks button{border:1px solid #46345f;background:#15101c;color:#c8b5fb;border-radius:999px;padding:6px 8px;font-size:8px;font-weight:850;white-space:nowrap}.score-builder-section{margin-top:15px}.score-builder-section-head{display:flex;justify-content:space-between;gap:10px;align-items:end;margin-bottom:7px}.score-builder-section-head b{font-size:10px;text-transform:uppercase;letter-spacing:.08em;color:#d9cff0}.score-builder-section-head span{font-size:8px;color:#746d7f}.score-pick-grid{display:grid;gap:7px}.score-pick{display:grid;grid-template-columns:auto 1fr auto;align-items:center;gap:9px;border:1px solid #362a49;border-radius:13px;background:#131018;padding:9px 10px;cursor:pointer}.score-pick:has(input:checked){border-color:#7657a6;background:#1e1629;box-shadow:inset 0 0 0 1px rgba(155,120,248,.08)}.score-pick.penalty{border-color:#493033;background:#181012}.score-pick.penalty:has(input:checked){border-color:#8c454c;background:#221214}.score-pick input{width:17px;height:17px;accent-color:#9b78f8;margin:0}.score-pick span{min-width:0}.score-pick b{display:block;font-size:10px;color:#e0d7f5}.score-pick small{display:block;margin-top:2px;font-size:8px;line-height:1.35;color:#817a8b}.score-pick>strong{font-size:13px}.score-note{margin-top:14px}.score-note label span{font-weight:500;color:#6f7782;text-transform:none;letter-spacing:0}.score-builder-footer{position:sticky;bottom:72px;z-index:5;display:grid;grid-template-columns:auto auto 1fr;align-items:center;gap:8px;margin:15px -7px -7px;padding:9px;border:1px solid #3f3156;border-radius:16px;background:rgba(18,13,25,.96);backdrop-filter:blur(12px)}.score-builder-total{min-width:63px}.score-builder-total span{display:block;font-size:7px;text-transform:uppercase;letter-spacing:.08em;color:#756e7f}.score-builder-total strong{display:block;margin-top:2px;font-size:15px;color:#d7c6ff}.score-builder-total strong.negative{color:var(--red)}.score-builder-footer .primary{background:#9b78f8;color:#100b18;justify-self:stretch}.score-builder button:disabled,.score-builder input:disabled,.score-builder textarea:disabled{opacity:.5;cursor:not-allowed}
 @media(max-width:420px){.score-builder-footer{grid-template-columns:1fr 1fr}.score-builder-footer .primary{grid-column:1/-1}.score-pick small{display:none}}
 
-/* v3.1.2 BabyBat brand refresh — preserve layout, upgrade the skin */
+/* v3.1.2 Nocturnal Games brand foundation — preserve layout, upgrade the skin */
 :root{
   --bb-silver:#d9d9df;
   --bb-silver2:#8c8d98;
@@ -119,13 +119,13 @@ body:before{
 }
 .ambient{opacity:.10}.ambient-b{background:var(--bb-purple)}
 
-/* Shared BabyBat logo asset */
+/* Shared Nocturnal Games logo asset */
 .babybat-logo{display:grid;place-items:center;flex:0 0 auto;filter:drop-shadow(0 8px 18px rgba(0,0,0,.4))}
 .babybat-logo img{display:block;width:100%;height:100%;object-fit:contain}
 .header-logo{width:56px;height:56px}
-.auth-logo{width:176px;height:176px;margin:-12px auto 4px;filter:drop-shadow(0 14px 32px rgba(111,39,163,.35))}
+.auth-logo{width:198px;height:198px;margin:-12px auto 4px;filter:drop-shadow(0 14px 32px rgba(111,39,163,.35))}
 
-/* Keep the same header layout; make it BabyBat first, then side-specific */
+/* Keep the same header layout; make it Nocturnal Games first, then side-specific */
 .topbar{
   margin:0 -2px;padding:13px 6px 11px;
   background:linear-gradient(to bottom,rgba(8,8,12,.985) 75%,rgba(8,8,12,.82) 90%,transparent);
@@ -207,7 +207,7 @@ body[data-theme="sovereign"] .nav button.active{color:#58dc88}
 body[data-theme="nocturne"] .build-version{color:#725486}
 body[data-theme="sovereign"] .build-version{color:#496654}
 
-/* Login / signup / recovery: BabyBat belongs to the shared game, not either side */
+/* Login / signup / recovery: Nocturnal Games is the shared game shell, not either side */
 .auth-wrap{
   margin:0 -14px;padding:calc(22px + env(safe-area-inset-top)) 18px 34px;
   min-height:100vh;
@@ -290,9 +290,9 @@ body.counsel-keyboard-open .counsel-page{padding-bottom:94px}
 }
 
 
-/* v3.1.8 — per-account SMS + Push controls */
+/* v3.1.9 — per-account Push controls */
 .notification-section{margin-top:24px}
-.notification-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.notification-grid{display:grid;grid-template-columns:1fr;gap:10px}
 .notification-card{padding:14px;border-color:#383a43;background:linear-gradient(145deg,#13141a,#0b0c10)}
 .notification-title{display:flex;align-items:flex-start;justify-content:space-between;gap:10px;margin-bottom:7px}
 .notification-title h3{margin:3px 0 0;font-size:14px}
@@ -301,7 +301,7 @@ body.counsel-keyboard-open .counsel-page{padding-bottom:94px}
 .notification-state.pending{border-color:#5f532d;background:#201d12;color:#ddc56d}
 .notification-state.bad{border-color:#6a343b;background:#261216;color:#ec8f9b}
 .notification-actions{margin-top:11px}.notification-actions button{flex:1}
-.consent-row{font-size:8px;line-height:1.5}.notification-card .field{margin-top:10px}
+.notification-card .field{margin-top:10px}
 body[data-theme="sovereign"] .notification-card{border-color:#2e4937}
 body[data-theme="nocturne"] .notification-card{border-color:#4d3864}
 @media(max-width:620px){.notification-grid{grid-template-columns:1fr}.notification-card{padding:13px}}

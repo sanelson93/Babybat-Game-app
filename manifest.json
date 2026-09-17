@@ -1,23 +1,23 @@
 {
-  "name": "BabyBat Game Hub",
-  "short_name": "BabyBat",
+  "name": "Nocturnal Games",
+  "short_name": "Nocturnal Games",
   "start_url": "./",
   "display": "standalone",
   "background_color": "#08070b",
   "theme_color": "#17101e",
-  "description": "Private BabyBat game hub for Nocturne Collective and Sovereign Circle.",
+  "description": "Private Nocturnal Games platform for Nocturne Collective, Sovereign Circle, and invited players.",
   "icons": [
     {
-      "src": "babybat-icon-192.png",
+      "src": "nocturnal-games-icon-192.png",
       "sizes": "192x192",
       "type": "image/png",
       "purpose": "any"
     },
     {
-      "src": "babybat-icon-512.png",
+      "src": "nocturnal-games-icon-512.png",
       "sizes": "512x512",
       "type": "image/png",
-      "purpose": "any maskable"
+      "purpose": "any"
     }
   ],
   "id": "./",

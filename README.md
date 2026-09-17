@@ -1,151 +1,25 @@
-# BabyBat Game Hub v3.1.8
-### SMS + Push notifications
-- SMS stays in the product and keeps its Twilio/compliance path.
-- Per-account SMS preference, phone number, and explicit consent are stored in Supabase.
-- Push notifications use standard Web Push with a service worker and a server-generated VAPID key pair.
-- On iPhone/iPad, BabyBat must be installed to the Home Screen before Web Push can be enabled.
-- Push can be enabled/disabled and tested from Profile / Account.
-- Mail and photo submissions dispatch push from the existing notification queue; scoring and submission review also create push alerts.
-- The Site Admin integration card has independent SMS and Push master switches.
+# Nocturnal Games v3.1.9
 
+## Rebrand
+- App brand is now **Nocturnal Games**.
+- New full Nocturnal Games logo is used throughout the app.
+- The Home Screen/PWA icon uses the full Nocturnal Games logo.
+- Browser title, manifest metadata, login/recovery screens, app header, version label, Mail wording, push copy, and public policy pages use the new brand.
+- Sovereign Circle and Nocturne Collective keep their existing side-specific identity and styling inside the shared Nocturnal Games shell.
 
-## Brand / profile refresh
-- Uses the new official BabyBat silver / black / purple crest as the shared game logo.
-- Login, signup, password recovery, access-code, and loading screens now use the BabyBat visual identity.
-- PWA manifest now has BabyBat 192px / 512px app icons.
-- Existing screen layouts and navigation are preserved; this release changes the visual styling rather than replacing the UX.
-- Moxie / Nocturne views keep the same controls but use richer purple + silver styling.
-- Shawn / Sovereign views keep the same controls but use green + silver Sovereign accents layered on the shared BabyBat shell.
-- Site Admin stays Sovereign-themed instead of drifting into unrelated gold styling.
-- Silk's new image is included as `sc-silk.webp`; the live BabyBat roster now points Silk to this asset.
-- Includes all v3.1.1 features, including private Counsel and Moxie's tap-to-build scoring ledger.
+## Notifications
+- Push notifications remain enabled and operational.
+- SMS/Twilio UI, public SMS page, Vercel SMS route, and Site Admin SMS controls have been removed.
+- Existing backend database columns are left intact for migration safety, but SMS is not exposed by this build.
 
-## v3.1.1 scoring UX
-- Moxie Score now uses a directive-number + checkbox/button ledger builder.
-- Live total math and duplicate protection are automatic.
-- Post Ledger writes the selected scoring rules directly to the permanent point ledger and marks the directive scored.
-- Shawn Site Admin retains the advanced bulk paste importer for maintenance/backfill.
+## Preserved from v3.1.8
+- iPhone keyboard-safe Counsel composer.
+- Private Sovereign / Nocturne Counsel.
+- OpenAI usage meter.
+- Mail, evidence, scoring, rewards, organizations, rules, auth, and admin features.
+- Push subscription controls and test push.
 
+## Deploy
+Upload the contents of this ZIP to the existing Vercel project. The package is flat-root deployment ready.
 
-V3.1 adds the first real OpenAI-powered Counsel layer directly inside BabyBat while preserving the V3 game hub, Mail, evidence, status, scoring, rewards, and Site Admin controls.
-
-## New in v3.1
-
-### Sovereign Counsel
-- Private to the authenticated Sovereign Circle BabyBat account.
-- Persistent conversation history stored separately from Nocturne.
-- Uses the OpenAI Responses API with a persistent OpenAI Conversation.
-- Default model: `gpt-5.6-sol` with medium reasoning.
-- Seeded with the Sovereign Circle operating model, member specialties, Scales/Sigma/Sphinx responsibilities, Shawn-final-authority rule, and no-emoji drafting preference.
-- Every response receives a fresh BabyBat snapshot: organization OPEN/CLOSED status, live score, rewards, directives, scoring rules, rulebook, relevant Mail, evidence records, and rosters.
-
-### Nocturne Counsel
-- Private to the authenticated Nocturne Collective BabyBat account.
-- Separate thread, messages, OpenAI Conversation ID, and permissions from Sovereign Counsel.
-- Uses live Nocturne roster / Game Master state and current BabyBat game data.
-- Moxie remains the human final authority.
-
-### Human approval stays mandatory
-Counsel can analyze and draft, but it does not silently mutate game state.
-- Any assistant answer can be moved into a BabyBat Mail compose screen for human review.
-- Nocturne can move a Counsel response into a Directive approval screen and edit it before **Issue + Send**.
-- Evidence review cards and photo viewer now include **Ask Counsel**. The selected private evidence photo is sent to OpenAI only when the user explicitly invokes that action.
-- Status, scoring, rewards, directives, and Mail still use BabyBat's existing explicit controls.
-
-### Counsel Site Admin controls
-Shawn's Site Admin Control Center can change without redeploying:
-- Counsel ON/OFF
-- Model: GPT-5.6 Sol / Terra / Luna
-- Reasoning effort
-- Sovereign instruction supplement
-- Nocturne instruction supplement
-- Counsel connection test / diagnostic status
-
-The OpenAI API key is intentionally **not** stored in the browser or `app_settings`.
-
-## Required one-time OpenAI setup
-The v3.1 database tables and `babybat-counsel` Edge Function are already deployed in the dedicated BabyBat Supabase project.
-
-To activate AI responses, add this Supabase Edge Function secret in the BabyBat project:
-
-`OPENAI_API_KEY=<your OpenAI Platform API key>`
-
-The API key must come from the OpenAI API Platform and API usage is billed separately from ChatGPT Plus. Do not put the key in `config.js`, Site Admin, localStorage, or source control.
-
-After adding the secret:
-1. Open BabyBat as Shawn.
-2. Player/Admin → Admin.
-3. Owner Control Center → **Private Counsel Engine**.
-4. Tap **Test Counsel Connection**.
-5. It should show `READY`.
-
-No Vercel redeploy is required after adding the Supabase secret.
-
-## V3 features retained
-- Organization-level **Sovereign Circle OPEN/CLOSED** and **Nocturne Collective OPEN/CLOSED**.
-- BabyBat Mail with Inbox/Sent/unread/threaded replies/categories.
-- Directive issue + Mail delivery.
-- Private photo evidence, browser compression, review, save, configurable post-save cleanup.
-- Shawn-only Owner Control Center.
-- Bulk scoring ledger parser/importer.
-- Permanent score ledger and rewards.
-- Password recovery, confirmation resend, role isolation, Shawn Player/Admin switch, Moxie purple-only view.
-- SMS event queue remains ready for Twilio/provider setup.
-
-## Production Auth URL requirements
-Supabase Authentication → URL Configuration:
-- Site URL: `https://babybat-game-app.vercel.app/`
-- Redirect URL: `https://babybat-game-app.vercel.app/**`
-
-## Deployment
-Upload the contents of this ZIP to the Vercel deployment root. All image assets remain intentionally flat beside `index.html`.
-
-## Security
-- Frontend contains only the Supabase publishable key.
-- OpenAI secret remains server-side in Supabase Edge Function secrets.
-- The `babybat-counsel` function requires a valid Supabase JWT.
-- Counsel rows use RLS and are scoped to the authenticated user.
-- No Site Admin preview can read Moxie's private Nocturne Counsel.
-- Evidence images remain in the private `game-evidence` bucket.
-- The separate BSB fantasy-football project is not used or modified by BabyBat.
-
-## Known external setup still pending
-- The OpenAI API key is already configured; OpenAI API billing/credits must remain active for Counsel responses.
-- Twilio/SMS provider credentials still need to be configured before SMS sends.
-- Supabase Auth still reports the project-level warning that Leaked Password Protection is disabled; this is a Dashboard Auth setting.
-
-## v3.1.3 Counsel reliability fix
-- Counsel user messages are persisted before the OpenAI response is requested, so they never disappear on provider errors.
-- Failed AI calls are visibly marked in the thread with a human-readable reason.
-- Site Admin **Test Counsel Connection** runs a tiny live model request instead of only checking whether a secret exists.
-- Frontend reloads persisted Counsel history after an error.
-
-
-## v3.1.4 AI usage meter
-- Adds a Site Admin AI Usage Meter for estimated BabyBat Counsel spend.
-- Shows today, current month, Sovereign, Nocturne, average response cost, response count, and token totals.
-- Successful Counsel replies are recorded automatically through the secure `babybat-ai-usage` Edge Function.
-- Site Admin can refresh/backfill stored Counsel response IDs.
-- Costs are estimates from OpenAI token usage and current public model pricing; OpenAI Platform billing remains authoritative.
-
-## v3.1.6 — public SMS verification pages
-- Adds public `/sms`, `/privacy`, and `/terms` pages for Twilio review without exposing private game data.
-- The SMS page documents BabyBat's transactional notification use case, opt-in language, STOP/HELP behavior, message-frequency disclosure, sample messages, and mobile-data privacy language.
-- The main authenticated game remains unchanged; no database migration is required for this release.
-- For Twilio's website field after deployment, use `https://babybat-game-app.vercel.app/sms`.
-
-
-## v3.1.7 — iPhone Counsel composer fix
-- Fixes the iPhone Counsel composer being covered by the bottom navigation while the virtual keyboard is open.
-- Temporarily moves the bottom navigation out of the way during Counsel typing.
-- Auto-grows the Counsel text box up to a readable limit while keeping the Send button visible.
-
-## v3.1.8 — SMS + Push notifications
-- Keeps the existing Twilio/SMS path; toll-free registration can remain in review while the app stores each user's explicit SMS preference and mobile number.
-- Adds Web Push for installed BabyBat PWAs with per-device enable/disable and a test-push control.
-- iPhone/iPad users are guided to install BabyBat to the Home Screen before enabling push.
-- Adds server-side VAPID key generation/storage and the authenticated `babybat-push` Edge Function. The VAPID private key never ships to the browser.
-- Existing Mail and photo-submission notification events can dispatch push; scoring and evidence-review actions also create push alerts.
-- Adds independent Site Admin master switches for Push and SMS.
-- Adds separate push delivery status/error fields to the notification event queue.
-- SMS does not send until Twilio approves the number and provider credentials/sending backend are configured.
+Because iOS caches installed PWA metadata and icons, remove the old Home Screen app and add it again after deploying if the old name/icon remains.

@@ -1,4 +1,4 @@
--- BabyBat Game Hub backend is provisioned in the dedicated Supabase project:
+-- Nocturnal Games backend is provisioned in the dedicated Supabase project:
 -- project: babybat-game-hub
 -- ref: mbxevizxcwmmldjtbksq
 --
@@ -17,7 +17,7 @@
 --   babybat-counsel Supabase Edge Function (JWT required)
 --   babybat-ai-usage Supabase Edge Function (JWT required)
 --   babybat-push Supabase Edge Function (JWT required)
---   BabyBat bridge RPCs: babybat_snapshot(), babybat_send_mail(), babybat_set_status()
+--   Legacy/internal bridge RPCs: babybat_snapshot(), babybat_send_mail(), babybat_set_status()
 --
 -- Counsel RLS:
 --   - each authenticated user can see only their own counsel_thread/messages
@@ -35,12 +35,11 @@
 -- Edge Function secret named OPENAI_API_KEY.
 --
 -- Push delivery notes:
---   - notification_events carries independent sms_status/push_status fields.
---   - users manage their own SMS/push preference row through RLS.
+--   - notification_events retains legacy transport fields for migration safety; v3.1.9 uses push only.
+--   - users manage push preferences through RLS; deprecated transport columns are not used by v3.1.9.
 --   - push endpoint/keys are registered through the authenticated Edge Function.
 --   - push_server_config is not readable by anon/authenticated clients; only the
 --     public VAPID key is returned by babybat-push.
---   - Twilio credentials remain pending and must stay server-side when added.
 --
 -- Earlier core tables remain in production:
 -- profiles, game_entities, games, game_memberships, directives, scoring_rules,

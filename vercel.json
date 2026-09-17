@@ -48,15 +48,6 @@
       ]
     },
     {
-      "source": "/sms.html",
-      "headers": [
-        {
-          "key": "Cache-Control",
-          "value": "no-cache, no-store, must-revalidate"
-        }
-      ]
-    },
-    {
       "source": "/privacy.html",
       "headers": [
         {
@@ -76,10 +67,6 @@
     }
   ],
   "rewrites": [
-    {
-      "source": "/sms",
-      "destination": "/sms.html"
-    },
     {
       "source": "/privacy",
       "destination": "/privacy.html"

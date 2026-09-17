@@ -1,6 +1,6 @@
-const CACHE='babybat-v318-sms-push';
-const CORE=['./','./index.html','./styles.css?v=3.1.8','./config.js?v=3.1.8','./app.js?v=3.1.8','./manifest.json?v=3.1.8'];
-const ASSETS=['./nc-cress.webp','./nc-dusk.webp','./nc-eclipse.webp','./nc-ember.webp','./nc-jinx.webp','./nc-moxie.webp','./nc-nyx.webp','./nc-sable.webp','./nc-selene.webp','./nc-vega.webp','./nocturne-collective-logo.webp','./babybat-logo.webp','./babybat-icon-192.png','./babybat-icon-512.png','./sc-silk.webp','./sc-sage.webp','./sc-saint.webp','./sc-scales.webp','./sc-shawn.webp','./sc-sigma.webp','./sc-sinister.webp','./sc-sir.webp','./sc-sphinx.webp','./sovereign-circle-logo.webp'];
+const CACHE='nocturnal-games-v319';
+const CORE=['./','./index.html','./styles.css?v=3.1.9','./config.js?v=3.1.9','./app.js?v=3.1.9','./manifest.json?v=3.1.9'];
+const ASSETS=['./nc-cress.webp','./nc-dusk.webp','./nc-eclipse.webp','./nc-ember.webp','./nc-jinx.webp','./nc-moxie.webp','./nc-nyx.webp','./nc-sable.webp','./nc-selene.webp','./nc-vega.webp','./nocturne-collective-logo.webp','./nocturnal-games-logo.webp','./nocturnal-games-icon-192.png','./nocturnal-games-icon-512.png','./sc-silk.webp','./sc-sage.webp','./sc-saint.webp','./sc-scales.webp','./sc-shawn.webp','./sc-sigma.webp','./sc-sinister.webp','./sc-sir.webp','./sc-sphinx.webp','./sovereign-circle-logo.webp'];
 self.addEventListener('install',event=>event.waitUntil((async()=>{
   const cache=await caches.open(CACHE);
   await Promise.allSettled([...CORE,...ASSETS].map(async url=>{
@@ -42,9 +42,9 @@ self.addEventListener('fetch',event=>{
 });
 
 
-// v3.1.8 — Web Push delivery for installed BabyBat PWAs.
+// v3.1.9 — Web Push delivery for installed Nocturnal Games PWAs.
 self.addEventListener('push',event=>{
-  let payload={title:'BabyBat',body:'New game activity',url:'./',tag:'babybat'};
+  let payload={title:'Nocturnal Games',body:'New game activity',url:'./',tag:'nocturnal-games'};
   try{
     if(event.data){
       const parsed=event.data.json();
@@ -55,13 +55,13 @@ self.addEventListener('push',event=>{
   }
   const options={
     body:payload.body||'',
-    icon:'./babybat-icon-192.png',
-    badge:'./babybat-icon-192.png',
-    tag:payload.tag||'babybat',
+    icon:'./nocturnal-games-icon-192.png',
+    badge:'./nocturnal-games-icon-192.png',
+    tag:payload.tag||'nocturnal-games',
     renotify:true,
     data:{url:payload.url||'./'}
   };
-  event.waitUntil(self.registration.showNotification(payload.title||'BabyBat',options));
+  event.waitUntil(self.registration.showNotification(payload.title||'Nocturnal Games',options));
 });
 self.addEventListener('notificationclick',event=>{
   event.notification.close();
