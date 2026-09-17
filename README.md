@@ -1,4 +1,4 @@
-# Nocturnal Games v3.2.0
+# Nocturnal Games v3.2.2
 
 ## Rebrand
 - App brand is now **Nocturnal Games**.
@@ -32,3 +32,18 @@
 Upload the contents of this ZIP to the existing Vercel project. The package is flat-root deployment ready.
 
 Because iOS caches installed PWA metadata and icons, remove the old Home Screen app and add it again after deploying if the old name/icon remains.
+
+## v3.2.1 — Live Mail refresh
+- Incoming Nocturnal Games Mail updates immediately through Supabase Realtime.
+- Adds an 8-second foreground Mail reconciliation fallback for iOS/PWA websocket misses.
+- Re-syncs Mail whenever the app returns to the foreground or regains focus.
+- Automatically reconnects the realtime channel after timeout/closure.
+- No Home Screen reinstall is required for this update.
+
+
+## v3.2.2 — Mail read receipts
+- Sent Mail now shows **Sent** until the recipient actually opens the message.
+- After the recipient opens it, the sender sees **Read** with the read timestamp.
+- Opened sent messages show a detailed receipt line with the recipient organization and timestamp.
+- Inbox previews do not mark Mail as read; opening the message is what sets the receipt.
+- Read-status changes arrive through the same Realtime + foreground reconciliation added in v3.2.1, so the sender does not need to close/reopen the app.

@@ -35,8 +35,8 @@
 -- Edge Function secret named OPENAI_API_KEY.
 --
 -- Push delivery notes:
---   - notification_events retains legacy transport fields for migration safety; v3.2.0 uses push only.
---   - users manage push preferences through RLS; deprecated transport columns are not used by v3.2.0.
+--   - notification_events retains legacy transport fields for migration safety; v3.2.2 uses push only.
+--   - users manage push preferences through RLS; deprecated transport columns are not used by v3.2.2.
 --   - push endpoint/keys are registered through the authenticated Edge Function.
 --   - push_server_config is not readable by anon/authenticated clients; only the
 --     public VAPID key is returned by babybat-push.

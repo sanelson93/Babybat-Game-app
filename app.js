@@ -1,4 +1,4 @@
-const APP_VERSION = '3.2.0';
+const APP_VERSION = '3.2.2';
 const UI_STORAGE = 'babybat-game-hub-ui-v312';
 const CONFIG = window.BABYBAT_CONFIG;
 const { createClient } = window.supabase;
@@ -134,6 +134,9 @@ let aiUsageAttempted = false;
 let mailMode = 'inbox';
 let realtimeChannel = null;
 let realtimeTimer = null;
+let realtimeReconnectTimer = null;
+let mailPollTimer = null;
+let realtimeStatus = 'idle';
 let bulkLedgerRows = [];
 let bulkLedgerIgnored = [];
 let authMode = 'login';
@@ -203,6 +206,18 @@ function saveUI(){ localStorage.setItem(UI_STORAGE, JSON.stringify(ui)); }
 function esc(s=''){ return String(s).replace(/[&<>'"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#039;','"':'&quot;'}[c])); }
 function assetUrl(path=''){ const raw=String(path||'').trim(); if(!raw)return ''; if(/^https?:\/\//i.test(raw)||raw.startsWith('data:'))return raw; const clean=raw.replace(/^\/+/, ''); try{return new URL(clean, document.baseURI).href}catch{return clean} }
 function fmtDate(v){ if(!v) return ''; const d=new Date(v); return Number.isNaN(d.valueOf()) ? String(v).slice(0,10) : d.toLocaleDateString(undefined,{month:'short',day:'numeric',year:'numeric'}); }
+function fmtDateTime(v){
+  if(!v) return '';
+  const d=new Date(v);
+  if(Number.isNaN(d.valueOf())) return String(v);
+  return d.toLocaleString(undefined,{month:'short',day:'numeric',year:'numeric',hour:'numeric',minute:'2-digit'});
+}
+function sentMailReceipt(m){
+  if(!m || m.sender_entity_id!==currentEntity()?.id) return '';
+  return m.recipient_read_at
+    ? `<span class="mail-receipt read">Read · ${esc(fmtDateTime(m.recipient_read_at))}</span>`
+    : `<span class="mail-receipt">Sent</span>`;
+}
 function accountRole(){ return ui.demo ? (ui.demoViewer==='moxie'?'game_master':'player') : (membership?.role || 'player'); }
 function isAdminAccount(){ return !ui.demo && membership?.role==='admin'; }
 function effectiveRole(){
@@ -388,7 +403,7 @@ function mailPage(){
 }
 function mailCard(m){
   const incoming=m.recipient_entity_id===currentEntity()?.id;
-  return `<button class="mail-card ${incoming&&!m.recipient_read_at?'unread':''}" onclick="openMail('${esc(m.id)}')"><div class="mail-dot"></div><div class="mail-card-main"><div class="mail-card-head"><b>${esc(incoming?entityName(m.sender_entity_id):entityName(m.recipient_entity_id))}</b><time>${fmtDate(m.created_at)}</time></div><strong>${esc(m.subject)}</strong><p>${esc(String(m.body||'').replace(/\s+/g,' ').slice(0,120))}</p><span class="mail-category">${esc(m.category)}</span></div></button>`;
+  return `<button class="mail-card ${incoming&&!m.recipient_read_at?'unread':''}" onclick="openMail('${esc(m.id)}')"><div class="mail-dot"></div><div class="mail-card-main"><div class="mail-card-head"><b>${esc(incoming?entityName(m.sender_entity_id):entityName(m.recipient_entity_id))}</b><time>${fmtDate(m.created_at)}</time></div><strong>${esc(m.subject)}</strong><p>${esc(String(m.body||'').replace(/\s+/g,' ').slice(0,120))}</p><div class="mail-card-foot"><span class="mail-category">${esc(m.category)}</span>${incoming?'':sentMailReceipt(m)}</div></div></button>`;
 }
 
 
@@ -929,24 +944,80 @@ async function loadRemote({silent=false}={}){
     if(counselHealth==='unknown' && personalCounselEnabled()) checkCounselHealth();
   }catch(e){remoteError=e?.message||String(e);remoteStatus='error';render()}
 }
+function mailStateKey(rows=mailMessages){
+  return (rows||[]).map(m=>`${m.id}:${m.recipient_read_at||''}:${m.created_at||''}`).join('|');
+}
+async function syncMailNow(){
+  if(!session||!game||ui.demo) return;
+  try{
+    const before=mailStateKey();
+    const {data,error}=await db.from('mail_messages').select('*').eq('game_id',game.id).order('created_at',{ascending:false});
+    if(error) throw error;
+    const next=data||[];
+    if(mailStateKey(next)!==before){mailMessages=next;render()}
+  }catch(e){console.warn('Nocturnal Games Mail sync failed',e)}
+}
+function handleMailRealtime(payload){
+  try{
+    const type=payload?.eventType||'';
+    const fresh=payload?.new;
+    const old=payload?.old;
+    if(type==='INSERT'&&fresh?.id){
+      mailMessages=[fresh,...mailMessages.filter(m=>m.id!==fresh.id)];
+      render();
+    }else if(type==='UPDATE'&&fresh?.id){
+      mailMessages=mailMessages.map(m=>m.id===fresh.id?fresh:m);
+      render();
+    }else if(type==='DELETE'&&old?.id){
+      mailMessages=mailMessages.filter(m=>m.id!==old.id);
+      render();
+    }
+  }finally{
+    clearTimeout(realtimeTimer);
+    realtimeTimer=setTimeout(syncMailNow,250);
+  }
+}
+function startMailPolling(){
+  clearInterval(mailPollTimer);
+  mailPollTimer=setInterval(()=>{if(!document.hidden)syncMailNow()},8000);
+}
+function scheduleRealtimeReconnect(){
+  clearTimeout(realtimeReconnectTimer);
+  realtimeReconnectTimer=setTimeout(()=>{if(session&&game&&!document.hidden)startRealtime()},1500);
+}
 function startRealtime(){
   stopRealtime(); if(!game) return;
-  realtimeChannel=db.channel(`babybat-${game.id}`)
+  realtimeStatus='connecting';
+  realtimeChannel=db.channel(`nocturnal-${game.id}`)
     .on('postgres_changes',{event:'*',schema:'public',table:'point_transactions',filter:`game_id=eq.${game.id}`},queueRealtimeReload)
     .on('postgres_changes',{event:'*',schema:'public',table:'rewards',filter:`game_id=eq.${game.id}`},queueRealtimeReload)
     .on('postgres_changes',{event:'*',schema:'public',table:'directives',filter:`game_id=eq.${game.id}`},queueRealtimeReload)
     .on('postgres_changes',{event:'*',schema:'public',table:'organization_members',filter:`game_id=eq.${game.id}`},queueRealtimeReload)
     .on('postgres_changes',{event:'*',schema:'public',table:'organization_status',filter:`game_id=eq.${game.id}`},queueRealtimeReload)
-    .on('postgres_changes',{event:'*',schema:'public',table:'mail_messages',filter:`game_id=eq.${game.id}`},queueRealtimeReload)
+    .on('postgres_changes',{event:'*',schema:'public',table:'mail_messages',filter:`game_id=eq.${game.id}`},handleMailRealtime)
     .on('postgres_changes',{event:'*',schema:'public',table:'evidence_submissions',filter:`game_id=eq.${game.id}`},queueRealtimeReload)
     .on('postgres_changes',{event:'*',schema:'public',table:'app_settings',filter:`game_id=eq.${game.id}`},queueRealtimeReload)
     .on('postgres_changes',{event:'*',schema:'public',table:'user_notification_preferences',filter:`game_id=eq.${game.id}`},queueRealtimeReload)
     .on('postgres_changes',{event:'*',schema:'public',table:'push_subscriptions',filter:`game_id=eq.${game.id}`},queueRealtimeReload)
     .on('postgres_changes',{event:'*',schema:'public',table:'counsel_messages',filter:`game_id=eq.${game.id}`},queueRealtimeReload)
-    .subscribe();
+    .subscribe(status=>{
+      realtimeStatus=status;
+      if(status==='SUBSCRIBED') syncMailNow();
+      else if(status==='CHANNEL_ERROR'||status==='TIMED_OUT'||status==='CLOSED') scheduleRealtimeReconnect();
+    });
+  startMailPolling();
 }
 function queueRealtimeReload(){clearTimeout(realtimeTimer);realtimeTimer=setTimeout(()=>loadRemote({silent:true}),350)}
-function stopRealtime(){if(realtimeChannel){db.removeChannel(realtimeChannel);realtimeChannel=null}}
+function stopRealtime(){
+  clearTimeout(realtimeReconnectTimer);
+  clearInterval(mailPollTimer);
+  realtimeReconnectTimer=null;mailPollTimer=null;realtimeStatus='idle';
+  if(realtimeChannel){db.removeChannel(realtimeChannel);realtimeChannel=null}
+}
+document.addEventListener('visibilitychange',()=>{
+  if(!document.hidden&&session&&game){syncMailNow();if(!realtimeChannel||realtimeStatus!=='SUBSCRIBED')startRealtime()}
+});
+window.addEventListener('focus',()=>{if(session&&game)syncMailNow()});
 
 window.go=p=>{if(p==='counsel'&&!personalCounselEnabled()){toast('In-app Counsel is turned off for this account');p='admin'}ui.activePage=p;saveUI();render();window.scrollTo({top:0,behavior:'smooth'})}
 window.scrollToId=id=>document.getElementById(id)?.scrollIntoView({behavior:'smooth',block:'start'})
@@ -1094,8 +1165,13 @@ window.sendMail=async(replyId='')=>{
 }
 window.openMail=async id=>{
   const m=mailMessages.find(x=>x.id===id);if(!m)return;const incoming=m.recipient_entity_id===currentEntity()?.id;
-  if(incoming&&!m.recipient_read_at&&!ui.demo){await db.from('mail_messages').update({recipient_read_at:new Date().toISOString()}).eq('id',m.id);m.recipient_read_at=new Date().toISOString();}
-  document.body.insertAdjacentHTML('beforeend',`<div class="modal-back" id="mailModal"><div class="modal mail-view"><div class="eyebrow">${esc(m.category.toUpperCase())}</div><h3>${esc(m.subject)}</h3><div class="mail-from">${esc(entityName(m.sender_entity_id))} <span>${esc(mailAddressForEntity(m.sender_entity_id))}</span><br>to ${esc(entityName(m.recipient_entity_id))}</div><div class="mail-body">${esc(m.body).replace(/\n/g,'<br>')}</div><div class="row"><button class="secondary" onclick="document.getElementById('mailModal')?.remove()">Close</button>${incoming&&!previewReadOnly()?`<button class="primary" onclick="document.getElementById('mailModal')?.remove();openComposeMail('${esc(m.id)}')">Reply</button>`:''}</div></div></div>`);render();
+  if(incoming&&!m.recipient_read_at&&!ui.demo){
+    const readAt=new Date().toISOString();
+    const {error}=await db.from('mail_messages').update({recipient_read_at:readAt}).eq('id',m.id);
+    if(!error)m.recipient_read_at=readAt;
+  }
+  const receipt=!incoming?`<div class="mail-read-receipt ${m.recipient_read_at?'read':''}">${m.recipient_read_at?`Read by ${esc(entityName(m.recipient_entity_id))} · ${esc(fmtDateTime(m.recipient_read_at))}`:`Sent · ${esc(fmtDateTime(m.created_at))}`}</div>`:'';
+  document.body.insertAdjacentHTML('beforeend',`<div class="modal-back" id="mailModal"><div class="modal mail-view"><div class="eyebrow">${esc(m.category.toUpperCase())}</div><h3>${esc(m.subject)}</h3><div class="mail-from">${esc(entityName(m.sender_entity_id))} <span>${esc(mailAddressForEntity(m.sender_entity_id))}</span><br>to ${esc(entityName(m.recipient_entity_id))}</div>${receipt}<div class="mail-body">${esc(m.body).replace(/\n/g,'<br>')}</div><div class="row"><button class="secondary" onclick="document.getElementById('mailModal')?.remove()">Close</button>${incoming&&!previewReadOnly()?`<button class="primary" onclick="document.getElementById('mailModal')?.remove();openComposeMail('${esc(m.id)}')">Reply</button>`:''}</div></div></div>`);render();
 }
 window.issueDirective=async()=>{
   if(previewReadOnly())return previewOnly();
