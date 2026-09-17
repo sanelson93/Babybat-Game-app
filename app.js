@@ -1,4 +1,4 @@
-const APP_VERSION = '3.1.9';
+const APP_VERSION = '3.2.0';
 const UI_STORAGE = 'babybat-game-hub-ui-v312';
 const CONFIG = window.BABYBAT_CONFIG;
 const { createClient } = window.supabase;
@@ -229,6 +229,14 @@ function setting(key,fallback=null){
   const row=appSettings.find(x=>x.setting_key===key);
   return row?row.setting_value:fallback;
 }
+function personalCounselEnabled(){
+  if(ui.demo) return true;
+  if(effectiveRole()==='admin') return true;
+  return notificationPreference?.counsel_enabled!==false;
+}
+function counselAvailable(){
+  return setting('counsel_enabled',true)!==false && personalCounselEnabled();
+}
 function currentEntity(){
   if(ui.demo){const slug=ui.demoViewer==='moxie'?'nocturne-collective':'sovereign-circle';return entityRows().find(e=>e.slug===slug);}
   return entityRows().find(e=>e.id===membership?.entity_id) || null;
@@ -276,7 +284,10 @@ function header(){
 function nav(){
   const lastLabel=effectiveRole()==='game_master'?'Score':(isAdminAccount()&&ui.siteMode==='player'?'Profile':'Admin');
   const unread=unreadMailCount();
-  return `<nav class="nav"><span class="build-version">NOCTURNAL v${APP_VERSION}</span>${[['home','Home'],['counsel','Counsel'],['mail',unread?`Mail ${unread}`:'Mail'],['book','Rules'],['ledger','Ledger'],['org','Orgs'],['admin',lastLabel]].map(([p,l])=>`<button class="${ui.activePage===p?'active':''}" onclick="go('${p}')">${icon(p)}<span>${l}</span></button>`).join('')}</nav>`;
+  const items=[['home','Home']];
+  if(personalCounselEnabled()) items.push(['counsel','Counsel']);
+  items.push(['mail',unread?`Mail ${unread}`:'Mail'],['book','Rules'],['ledger','Ledger'],['org','Orgs'],['admin',lastLabel]);
+  return `<nav class="nav"><span class="build-version">NOCTURNAL v${APP_VERSION}</span>${items.map(([p,l])=>`<button class="${ui.activePage===p?'active':''}" onclick="go('${p}')">${icon(p)}<span>${l}</span></button>`).join('')}</nav>`;
 }
 
 function ledgerItems(){
@@ -363,7 +374,7 @@ function submissionHistoryCard(e){
 }
 function submissionReviewCard(e){
   const d=directives.find(x=>x.id===e.directive_id);
-  return `<div class="card review-card"><div><span class="eyebrow">${esc(d?.code||'DIRECTIVE')}</span><h3>${esc(d?.title||'Photo Evidence')}</h3><p>${esc(e.caption||'No caption')}</p></div><div class="row"><button class="secondary" onclick="openEvidence('${esc(e.id)}')">View Photo</button><button class="secondary" onclick="askCounselAboutEvidence('${esc(e.id)}')">Ask Counsel</button><button class="primary" onclick="reviewEvidence('${esc(e.id)}','approved')">Approve</button></div></div>`;
+  return `<div class="card review-card"><div><span class="eyebrow">${esc(d?.code||'DIRECTIVE')}</span><h3>${esc(d?.title||'Photo Evidence')}</h3><p>${esc(e.caption||'No caption')}</p></div><div class="row"><button class="secondary" onclick="openEvidence('${esc(e.id)}')">View Photo</button>${counselAvailable()?`<button class="secondary" onclick="askCounselAboutEvidence('${esc(e.id)}')">Ask Counsel</button>`:''}<button class="primary" onclick="reviewEvidence('${esc(e.id)}','approved')">Approve</button></div></div>`;
 }
 function mailRows(){
   if(ui.demo) return [];
@@ -408,6 +419,7 @@ function counselPage(){
   if(ui.demo) return `<main class="page"><section class="section"><div class="empty">Private AI Counsel is available only after signing into a live Nocturnal Games account.</div></section></main>`;
   if(previewReadOnly()) return `<main class="page"><section class="section"><div class="card"><div class="eyebrow">PRIVACY WALL</div><h3>Moxie's Counsel is private</h3><p class="small-note">Site Admin preview can inspect her interface, but it cannot open or read Nocturne Counsel. Sign into Moxie's actual Nocturnal Games account to use that private room.</p><button class="secondary" onclick="setSiteMode('admin')">Back to Admin Home</button></div></section></main>`;
   if(setting('counsel_enabled',true)===false) return `<main class="page"><section class="section"><div class="empty">Nocturnal Games Counsel is currently disabled by Site Admin.</div></section></main>`;
+  if(!personalCounselEnabled()) return `<main class="page"><section class="section"><div class="card"><div class="eyebrow">ACCOUNT PREFERENCE</div><h3>In-App Counsel is turned off</h3><p class="small-note">This account is using external ChatGPT instead. Your existing private Counsel history is still saved and will return if you turn the feature back on.</p><button class="primary" onclick="setPersonalCounselEnabled(true)">Turn In-App Counsel Back On</button></div></section></main>`;
   const side=counselSide();const prompts=counselQuickPrompts();const configured=counselHealth==='ready';const needsKey=counselHealth==='needs_key';
   const model=setting('counsel_model','gpt-5.6-sol');
   const history=counselMessages.slice().sort((a,b)=>String(a.created_at).localeCompare(String(b.created_at)));
@@ -494,6 +506,24 @@ function notificationSettingsCard(){
     <div class="card notification-card"><div class="notification-title"><div><span class="eyebrow">PUSH</span><h3>Device Notifications</h3></div><b class="notification-state ${subscribed?'ok':permission==='denied'?'bad':'pending'}">${pushState}</b></div><p class="small-note">Receive Nocturnal Games alerts on this device even when the app is closed. On iPhone/iPad, Nocturnal Games must be added to the Home Screen first.</p>${iosNeedsInstall?`<div class="notice">On iPhone/iPad: use Share → Add to Home Screen, then open Nocturnal Games from the new icon and enable Push here.</div>`:''}${permission==='denied'?`<div class="notice">Notifications are blocked in this device's settings. Re-enable Nocturnal Games notifications there, then come back.</div>`:''}<div class="row notification-actions">${subscribed?`<button class="secondary" ${pushBusy?'disabled':''} onclick="testPushNotification()">Test Push</button><button class="danger" ${pushBusy?'disabled':''} onclick="disablePushNotifications()">Turn Off This Device</button>`:`<button class="primary" ${pushBusy||!canEnable?'disabled':''} onclick="enablePushNotifications()">${pushBusy?'Working…':'Enable This Device'}</button>`}</div></div>
   </div></section>`;
 }
+function counselPreferenceCard(){
+  if(ui.demo||previewReadOnly()||effectiveRole()==='admin') return '';
+  const enabled=notificationPreference?.counsel_enabled!==false;
+  const who=effectiveRole()==='game_master'?'Game Manager':'Player';
+  return `<section class="section counsel-preference-section"><div class="section-head"><h2>Counsel</h2><span>optional</span></div><div class="card counsel-preference-card"><div class="notification-title"><div><span class="eyebrow">${who.toUpperCase()} ACCOUNT</span><h3>In-App Counsel</h3></div><b class="notification-state ${enabled?'ok':'pending'}">${enabled?'ON':'OFF'}</b></div><p class="small-note">Use Nocturnal Games' private built-in Counsel, or turn it off if you prefer to keep your strategy in ChatGPT. This changes only your account. It does not affect the other player's Counsel and it does not delete your existing private history.</p><div class="row notification-actions">${enabled?`<button class="secondary" onclick="setPersonalCounselEnabled(false)">Turn Off In-App Counsel</button>`:`<button class="primary" onclick="setPersonalCounselEnabled(true)">Turn On In-App Counsel</button>`}</div></div></section>`;
+}
+window.setPersonalCounselEnabled=async enabled=>{
+  if(ui.demo||previewReadOnly()||!session||!game||!membership)return;
+  try{
+    const payload={user_id:session.user.id,game_id:game.id,entity_id:membership.entity_id,counsel_enabled:!!enabled,updated_at:new Date().toISOString()};
+    const {error}=await db.from('user_notification_preferences').upsert(payload,{onConflict:'user_id,game_id'});
+    if(error)throw error;
+    if(!enabled&&ui.activePage==='counsel'){ui.activePage='admin';saveUI();}
+    await loadRemote({silent:true});
+    toast(enabled?'In-app Counsel turned on':'In-app Counsel turned off — you can keep using ChatGPT');
+  }catch(e){toast(e?.message||String(e))}
+}
+
 function base64UrlToUint8Array(value){const pad='='.repeat((4-value.length%4)%4);const base64=(value+pad).replace(/-/g,'+').replace(/_/g,'/');const raw=atob(base64);return Uint8Array.from([...raw].map(c=>c.charCodeAt(0)))}
 async function invokePush(body){const {data,error}=await db.functions.invoke('nocturnal-push',{body:{game_id:game?.id,...body}});if(error)throw error;if(data?.error)throw new Error(data.error);return data}
 window.enablePushNotifications=async()=>{
@@ -526,7 +556,7 @@ function admin(){
   const playerUpgrade=accountRole()==='player' && !ui.demo;
   const isMoxie=r==='game_master';
   if(playerMode){
-    return `<main class="page"><section class="section" style="margin-top:4px"><div class="section-head"><h2>Player Profile</h2><span>your normal mode</span></div><div class="card player-profile-card"><div class="eyebrow">Sovereign Circle Player</div><h3>${esc(profile?.display_name||'Shawn')}</h3><p class="small-note">This is your live player account. Use the Player / Admin switch at the very top only when you need to maintain or QA the site.</p></div></section><section class="section account-section"><div class="section-head"><h2>Account</h2><span>live sync</span></div><div class="card account-card"><p class="small-note">${esc(session?.user?.email||'')}<br>Player Mode · Site Admin access available</p><div class="row"><button class="secondary" onclick="syncNow()">Sync</button><button class="danger" onclick="signOut()">Sign Out</button></div><button class="account-reset" onclick="emailPasswordReset()">Email Password Reset</button></div></section>${notificationSettingsCard()}</main>`;
+    return `<main class="page"><section class="section" style="margin-top:4px"><div class="section-head"><h2>Player Profile</h2><span>your normal mode</span></div><div class="card player-profile-card"><div class="eyebrow">Sovereign Circle Player</div><h3>${esc(profile?.display_name||'Shawn')}</h3><p class="small-note">This is your live player account. Use the Player / Admin switch at the very top only when you need to maintain or QA the site.</p></div></section><section class="section account-section"><div class="section-head"><h2>Account</h2><span>live sync</span></div><div class="card account-card"><p class="small-note">${esc(session?.user?.email||'')}<br>Player Mode · Site Admin access available</p><div class="row"><button class="secondary" onclick="syncNow()">Sync</button><button class="danger" onclick="signOut()">Sign Out</button></div><button class="account-reset" onclick="emailPasswordReset()">Email Password Reset</button></div></section>${counselPreferenceCard()}${notificationSettingsCard()}</main>`;
   }
   const moxiePreview=isMoxie && previewReadOnly();
   const heading=r==='admin'?'Site Administration':isMoxie?(moxiePreview?'Moxie Preview':'Moxie Scoring Console'):'Administration';
@@ -536,7 +566,7 @@ function admin(){
   return `<main class="page"><section class="section" style="margin-top:4px"><div class="section-head"><h2>${heading}</h2><span>${sub}</span></div>${moxiePreview?`<div class="preview-context"><span>Moxie layout preview</span><button onclick="setSiteMode('admin')">Back to Admin Home</button></div>`:''}${scoringIntro}${isMoxie&&!moxiePreview?directiveIssuerCard():''}${gm?scoringTool:`<div class="card"><h3 style="margin-top:0">Permission Model</h3><p class="small-note">Your current game role is <strong>${roleLabel()}</strong>. Players can view the ledger and use unlocked rewards. Game Master/Admin roles can post official scoring ledgers.</p></div>`}${playerUpgrade?adminUpgradeCard():''}</section>
   <section class="section"><div class="section-head"><h2>${isMoxie?'Reward Chest':'Reward Control'}</h2><span>${isMoxie?'shared with Shawn':'shared object'}</span></div>${adminRewards(rr)}</section>
   ${r==='admin'?adminControlCenter()+`<section class="section"><div class="section-head"><h2>Experience QA</h2><span>admin tools</span></div><div class="card"><p class="small-note">Player Mode is your real Shawn profile. Use Preview Moxie from the Admin Home only when you need to inspect her interface.</p></div></section>`:''}
-  ${ui.demo?`<section class="section"><div class="card"><button class="secondary" onclick="toggleDemoViewer()">Preview ${ui.demoViewer==='moxie'?'Shawn / Player':'Moxie / Game Master'}</button><button class="danger" style="margin-left:8px" onclick="leaveDemo()">Exit Demo</button></div></section>`:`<section class="section account-section"><div class="section-head"><h2>Account</h2><span>live sync</span></div><div class="card account-card"><p class="small-note">${esc(session?.user?.email||'')}<br>${roleLabel(accountRole())} · Supabase connected</p><div class="row"><button class="secondary" onclick="syncNow()">Sync</button><button class="danger" onclick="signOut()">Sign Out</button></div><button class="account-reset" onclick="emailPasswordReset()">Email Password Reset</button></div></section>${notificationSettingsCard()}`}</main>`;
+  ${ui.demo?`<section class="section"><div class="card"><button class="secondary" onclick="toggleDemoViewer()">Preview ${ui.demoViewer==='moxie'?'Shawn / Player':'Moxie / Game Master'}</button><button class="danger" style="margin-left:8px" onclick="leaveDemo()">Exit Demo</button></div></section>`:`<section class="section account-section"><div class="section-head"><h2>Account</h2><span>live sync</span></div><div class="card account-card"><p class="small-note">${esc(session?.user?.email||'')}<br>${roleLabel(accountRole())} · Supabase connected</p><div class="row"><button class="secondary" onclick="syncNow()">Sync</button><button class="danger" onclick="signOut()">Sign Out</button></div><button class="account-reset" onclick="emailPasswordReset()">Email Password Reset</button></div></section>${counselPreferenceCard()}${notificationSettingsCard()}`}</main>`;
 }
 function adminUpgradeCard(){return `<div class="card admin-upgrade"><div class="eyebrow">Site Owner</div><h3>Unlock Site Admin</h3><p class="small-note">Use the one-time admin upgrade code to turn this account into the site owner. That enables the top-level Player / Admin mode switch and Moxie QA preview.</p><div class="field"><label>Admin Upgrade Code</label><input id="adminUpgradeCode" class="input" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="ADM-…"></div><button id="adminUpgradeButton" class="primary" onclick="claimAdminUpgrade()">Activate Site Admin</button></div>`}
 
@@ -896,7 +926,7 @@ async function loadRemote({silent=false}={}){
     remoteStatus='ready';
     startRealtime();
     render();
-    if(counselHealth==='unknown') checkCounselHealth();
+    if(counselHealth==='unknown' && personalCounselEnabled()) checkCounselHealth();
   }catch(e){remoteError=e?.message||String(e);remoteStatus='error';render()}
 }
 function startRealtime(){
@@ -918,7 +948,7 @@ function startRealtime(){
 function queueRealtimeReload(){clearTimeout(realtimeTimer);realtimeTimer=setTimeout(()=>loadRemote({silent:true}),350)}
 function stopRealtime(){if(realtimeChannel){db.removeChannel(realtimeChannel);realtimeChannel=null}}
 
-window.go=p=>{ui.activePage=p;saveUI();render();window.scrollTo({top:0,behavior:'smooth'})}
+window.go=p=>{if(p==='counsel'&&!personalCounselEnabled()){toast('In-app Counsel is turned off for this account');p='admin'}ui.activePage=p;saveUI();render();window.scrollTo({top:0,behavior:'smooth'})}
 window.scrollToId=id=>document.getElementById(id)?.scrollIntoView({behavior:'smooth',block:'start'})
 window.enterDemo=()=>{ui.demo=true;ui.demoViewer='shawn';ui.activePage='home';saveUI();remoteStatus='ready';render();toast('Demo mode — live database unchanged')}
 window.leaveDemo=()=>{ui.demo=false;saveUI();if(session)loadRemote();else{remoteStatus='ready';render()}}
@@ -1094,7 +1124,7 @@ window.submitEvidence=async directiveId=>{
 }
 window.openEvidence=async id=>{
   const e=evidenceSubmissions.find(x=>x.id===id);if(!e||e.deleted_at){toast('This photo is no longer stored in Nocturnal Games');return}const signed=await db.storage.from('game-evidence').createSignedUrl(e.storage_path,600);if(signed.error){toast(signed.error.message);return}const recipient=e.recipient_entity_id===currentEntity()?.id;const d=directives.find(x=>x.id===e.directive_id);
-  document.body.insertAdjacentHTML('beforeend',`<div class="modal-back" id="photoModal"><div class="modal photo-view"><div class="eyebrow">${esc(d?.code||'EVIDENCE')}</div><h3>${esc(d?.title||'Photo Submission')}</h3><img src="${esc(signed.data.signedUrl)}" alt="Submitted evidence"><p>${esc(e.caption||'No caption')}</p><div class="photo-meta">${humanBytes(e.byte_size||0)} · ${fmtDate(e.created_at)} · ${esc(e.status)}</div><div class="row"><button class="secondary" onclick="document.getElementById('photoModal')?.remove()">Close</button><button class="secondary" onclick="askCounselAboutEvidence('${esc(e.id)}')">Ask Counsel</button>${recipient?`<button class="secondary" onclick="saveEvidencePhoto('${esc(e.id)}')">Save Photo</button>`:''}${recipient&&accountRole()==='game_master'?`<button class="primary" onclick="reviewEvidence('${esc(e.id)}','approved')">Approve</button><button class="danger" onclick="reviewEvidence('${esc(e.id)}','rejected')">Reject</button>`:''}</div></div></div>`)
+  document.body.insertAdjacentHTML('beforeend',`<div class="modal-back" id="photoModal"><div class="modal photo-view"><div class="eyebrow">${esc(d?.code||'EVIDENCE')}</div><h3>${esc(d?.title||'Photo Submission')}</h3><img src="${esc(signed.data.signedUrl)}" alt="Submitted evidence"><p>${esc(e.caption||'No caption')}</p><div class="photo-meta">${humanBytes(e.byte_size||0)} · ${fmtDate(e.created_at)} · ${esc(e.status)}</div><div class="row"><button class="secondary" onclick="document.getElementById('photoModal')?.remove()">Close</button>${counselAvailable()?`<button class="secondary" onclick="askCounselAboutEvidence('${esc(e.id)}')">Ask Counsel</button>`:''}${recipient?`<button class="secondary" onclick="saveEvidencePhoto('${esc(e.id)}')">Save Photo</button>`:''}${recipient&&accountRole()==='game_master'?`<button class="primary" onclick="reviewEvidence('${esc(e.id)}','approved')">Approve</button><button class="danger" onclick="reviewEvidence('${esc(e.id)}','rejected')">Reject</button>`:''}</div></div></div>`)
 }
 window.saveEvidencePhoto=async id=>{
   const e=evidenceSubmissions.find(x=>x.id===id);if(!e)return;const dl=await db.storage.from('game-evidence').download(e.storage_path);if(dl.error){toast(dl.error.message);return}const file=new File([dl.data],e.original_name||'babybat-photo.jpg',{type:e.mime_type||dl.data.type||'image/jpeg'});try{if(navigator.canShare?.({files:[file]})){await navigator.share({files:[file],title:'Nocturnal Games Photo'});}else{const url=URL.createObjectURL(dl.data);const a=document.createElement('a');a.href=url;a.download=file.name;document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),5000)}}catch(err){if(err?.name==='AbortError')return;toast(err?.message||String(err));return}
@@ -1140,6 +1170,7 @@ window.refreshAiUsage=async(showToast=false)=>{
 window.askCounsel=()=>{const el=document.getElementById('counselInput');const text=el?.value.trim()||'';if(!text){toast('Ask Counsel something first');return}sendCounselPrompt(text)}
 window.sendCounselPrompt=async(text,evidenceId='')=>{
   if(ui.demo||previewReadOnly()||counselSending)return;
+  if(!personalCounselEnabled()){toast('In-app Counsel is turned off for this account');return}
   const msg=String(text||'').trim();if(!msg)return;
   if(counselHealth!=='ready'){toast('Counsel is not connected yet');return}
   counselSending=true;counselPendingText=msg;counselLastError='';render();requestAnimationFrame(scrollCounselBottom);
@@ -1257,7 +1288,7 @@ window.importBulkLedger=async()=>{
 }
 function toast(msg){document.querySelector('.toast')?.remove();const el=document.createElement('div');el.className='toast';el.textContent=msg;document.body.appendChild(el);setTimeout(()=>el.remove(),2400)}
 
-// v3.1.9 — Nocturnal Games rebrand + push-only notifications.
+// v3.2.0 — per-account optional in-app Counsel + Nocturnal Games branding.
 function sizeCounselInput(el){
   if(!el||el.id!=='counselInput')return;
   el.style.height='auto';

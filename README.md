@@ -1,4 +1,4 @@
-# Nocturnal Games v3.1.9
+# Nocturnal Games v3.2.0
 
 ## Rebrand
 - App brand is now **Nocturnal Games**.
@@ -6,6 +6,15 @@
 - The Home Screen/PWA icon uses the full Nocturnal Games logo.
 - Browser title, manifest metadata, login/recovery screens, app header, version label, Mail wording, push copy, and public policy pages use the new brand.
 - Sovereign Circle and Nocturne Collective keep their existing side-specific identity and styling inside the shared Nocturnal Games shell.
+
+
+## Per-account Counsel preference
+- Normal **Player** and **Game Manager** accounts can turn **In-App Counsel** on or off from their account area.
+- Turning it off removes the Counsel tab and Ask Counsel shortcuts for that account.
+- Existing private Counsel history is preserved and returns if the account turns Counsel back on.
+- The preference affects only that account; it does not disable the other player's Counsel.
+- Site Admin retains access in Admin mode for configuration and QA.
+- This is separate from the site-wide Counsel master switch.
 
 ## Notifications
 - Push notifications remain enabled and operational.
