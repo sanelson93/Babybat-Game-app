@@ -1,4 +1,4 @@
-const APP_VERSION = '3.2.2';
+const APP_VERSION = '3.2.3';
 const UI_STORAGE = 'babybat-game-hub-ui-v312';
 const CONFIG = window.BABYBAT_CONFIG;
 const { createClient } = window.supabase;
@@ -31,7 +31,7 @@ const DEMO = {
   entities: [
     {slug:'sovereign-circle',name:'Sovereign Circle',entity_type:'circle',logo_path:'sovereign-circle-logo.webp',theme_key:'sovereign',tagline:'Strategy. Loyalty. Control.'},
     {slug:'nocturne-collective',name:'Nocturne Collective',entity_type:'collective',logo_path:'nocturne-collective-logo.webp',theme_key:'nocturne',tagline:"We don't follow the light. We run the night."},
-    {slug:'infernal-firm',name:'Infernal Firm',entity_type:'firm',logo_path:null,theme_key:'infernal',tagline:'Reserved for the next game.'}
+    {slug:'infernal-firm',name:'The Infernal Firm',entity_type:'firm',logo_path:'infernal-firm-logo.webp',theme_key:'infernal',tagline:'Agreements change worlds.'}
   ],
   members: [
     ['sovereign-circle','Shawn','Chair','Executive Command','CEO / Chair','sc-shawn.webp',10],
@@ -104,6 +104,8 @@ let remoteStatus = 'loading';
 let remoteError = '';
 let game = null;
 let membership = null;
+let games = [];
+let memberships = [];
 let entities = [];
 let organizationStatuses = [];
 let organizationMembers = [];
@@ -181,6 +183,7 @@ function canonicalClaimName(label='',role=''){
   const text=String(label||'').toLowerCase();
   if(text.includes('moxie')) return 'Moxie';
   if(text.includes('shawn')) return 'Shawn';
+  if(text.includes('vex')) return 'Vex';
   if(role==='game_master') return 'Moxie';
   return '';
 }
@@ -199,8 +202,8 @@ function passwordField(id,label,autocomplete='current-password',placeholder='8+ 
 }
 
 function loadUI(){
-  try { return {activePage:'home', demo:false, demoViewer:'shawn', siteMode:'player', adminPreview:'none', orgSlug:'sovereign-circle', ...JSON.parse(localStorage.getItem(UI_STORAGE)||'{}')}; }
-  catch { return {activePage:'home', demo:false, demoViewer:'shawn', siteMode:'player', adminPreview:'none', orgSlug:'sovereign-circle'}; }
+  try { return {activePage:'home', demo:false, demoViewer:'shawn', siteMode:'player', adminPreview:'none', orgSlug:'sovereign-circle', activeGameSlug:CONFIG.gameSlug, ...JSON.parse(localStorage.getItem(UI_STORAGE)||'{}')}; }
+  catch { return {activePage:'home', demo:false, demoViewer:'shawn', siteMode:'player', adminPreview:'none', orgSlug:'sovereign-circle', activeGameSlug:CONFIG.gameSlug}; }
 }
 function saveUI(){ localStorage.setItem(UI_STORAGE, JSON.stringify(ui)); }
 function esc(s=''){ return String(s).replace(/[&<>'"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#039;','"':'&quot;'}[c])); }
@@ -219,26 +222,40 @@ function sentMailReceipt(m){
     : `<span class="mail-receipt">Sent</span>`;
 }
 function accountRole(){ return ui.demo ? (ui.demoViewer==='moxie'?'game_master':'player') : (membership?.role || 'player'); }
-function isAdminAccount(){ return !ui.demo && membership?.role==='admin'; }
+function isAdminAccount(){ return !ui.demo && memberships.some(m=>m.role==='admin'); }
+function isInfernalGame(){ return game?.slug==='infernal-firm-game'; }
+function gameItemSingular(){ return String(setting('game_item_singular',isInfernalGame()?'Request':'Directive')||'Directive'); }
+function gameItemPlural(){ return String(setting('game_item_plural',isInfernalGame()?'Requests':'Directives')||'Directives'); }
+function gameCodePrefix(){ return String(setting('game_code_prefix',isInfernalGame()?'REQ':'SD')||'SD').toUpperCase(); }
+function playerEntity(){ return entityRows().find(e=>e.id===game?.player_entity_id)||null; }
+function gameMasterEntity(){ return entityRows().find(e=>e.id===game?.game_master_entity_id)||null; }
+function playerName(){ return playerEntity()?.slug==='infernal-firm'?'Vex':'Shawn'; }
 function effectiveRole(){
   if(ui.demo) return ui.demoViewer==='moxie'?'game_master':'player';
   if(isAdminAccount()){
     if(ui.siteMode!=='admin') return 'player';
-    return ui.adminPreview==='moxie'?'game_master':'admin';
+    if(ui.adminPreview==='moxie') return 'game_master';
+    if(ui.adminPreview==='vex'||ui.adminPreview==='shawn') return 'player';
+    return 'admin';
   }
   return accountRole();
 }
 function isGMView(){ return ['game_master','admin'].includes(effectiveRole()); }
-function previewReadOnly(){ return isAdminAccount() && ui.siteMode==='admin' && ui.adminPreview==='moxie'; }
+function previewReadOnly(){ return isAdminAccount() && ui.siteMode==='admin' && ui.adminPreview!=='none'; }
 function canRedeemView(){ return ['player','game_master','admin'].includes(effectiveRole()); }
 function roleLabel(r=effectiveRole()){ return ({player:'Player',game_master:'Game Master',admin:'Site Admin',viewer:'Viewer'})[r] || 'Player'; }
 function personLabel(){
   if(ui.demo) return ui.demoViewer==='moxie'?'Moxie':'Shawn';
-  if(isAdminAccount() && ui.siteMode==='admin' && ui.adminPreview==='moxie') return 'Moxie Preview';
+  if(isAdminAccount() && ui.siteMode==='admin'){
+    if(ui.adminPreview==='moxie') return 'Moxie Preview';
+    if(ui.adminPreview==='vex') return 'Vex Preview';
+    if(ui.adminPreview==='shawn') return 'Shawn Preview';
+  }
   if(accountRole()==='game_master') return 'Moxie';
+  if(currentEntity()?.slug==='infernal-firm') return 'Vex';
   return profile?.display_name || session?.user?.email?.split('@')[0] || 'Shawn';
 }
-function viewTheme(){ return effectiveRole()==='game_master'?'nocturne':'sovereign'; }
+function viewTheme(){ return currentEntity()?.theme_key || (effectiveRole()==='game_master'?'nocturne':'sovereign'); }
 function setting(key,fallback=null){
   if(ui.demo) return fallback;
   const row=appSettings.find(x=>x.setting_key===key);
@@ -254,6 +271,11 @@ function counselAvailable(){
 }
 function currentEntity(){
   if(ui.demo){const slug=ui.demoViewer==='moxie'?'nocturne-collective':'sovereign-circle';return entityRows().find(e=>e.slug===slug);}
+  if(isAdminAccount()&&ui.siteMode==='admin'){
+    if(ui.adminPreview==='moxie') return gameMasterEntity();
+    if(ui.adminPreview==='vex'&&isInfernalGame()) return playerEntity();
+    if(ui.adminPreview==='shawn'&&!isInfernalGame()) return playerEntity();
+  }
   return entityRows().find(e=>e.id===membership?.entity_id) || null;
 }
 function otherGameEntity(){
@@ -268,7 +290,29 @@ function mailAddressForEntity(id){
   const slug=entitySlug(id);
   if(slug==='nocturne-collective') return setting('nocturne_mail_address','nocturnecollective@nightshift.net');
   if(slug==='sovereign-circle') return setting('sovereign_mail_address','chambers@sovereigncircle.org');
+  if(slug==='infernal-firm') return setting('infernal_mail_address','infernalfirm@hellscape.net');
   return '';
+}
+function gameEntities(){
+  if(!game) return [];
+  const ids=new Set([game.player_entity_id,game.game_master_entity_id].filter(Boolean));
+  return entityRows().filter(e=>ids.has(e.id));
+}
+function gameLabel(g=game){
+  if(!g) return 'Game';
+  const e=entityRows().find(x=>x.id===g.player_entity_id);
+  return e?.slug==='infernal-firm'?'Infernal Firm':'Sovereign Circle';
+}
+function availableGameRows(){
+  if(ui.demo) return [];
+  const ids=new Set(memberships.map(m=>m.game_id));
+  return games.filter(g=>ids.has(g.id)).sort((a,b)=>gameLabel(a).localeCompare(gameLabel(b)));
+}
+function gameContextSwitcher(){
+  const rows=availableGameRows();
+  const show=!ui.demo&&rows.length>1&&((accountRole()==='game_master')||(isAdminAccount()&&ui.siteMode==='admin'));
+  if(!show) return '';
+  return `<div class="game-context-switch"><span>GAME</span><select onchange="setActiveGame(this.value)">${rows.map(g=>`<option value="${esc(g.slug)}" ${g.id===game?.id?'selected':''}>${esc(gameLabel(g))}</option>`).join('')}</select><small>${esc(isInfernalGame()?'Requests · Vex':'Directives · Shawn')}</small></div>`;
 }
 function unreadMailCount(){
   const me=currentEntity()?.id;if(!me)return 0;
@@ -279,7 +323,7 @@ function humanBytes(n=0){const x=Number(n)||0;if(x<1024)return `${x} B`;if(x<104
 
 function icon(name){const icons={home:'<path d="M3 11.5 12 4l9 7.5v8a1 1 0 0 1-1 1h-5v-6H9v6H4a1 1 0 0 1-1-1z"/>',counsel:'<path d="M4 5h16v11H9l-5 4z"/><path d="M8 9h8M8 12h5"/>',mail:'<path d="M3 5h18v14H3zM3 6l9 7 9-7"/>',book:'<path d="M4 4.5A2.5 2.5 0 0 1 6.5 2H11v18H6.5A2.5 2.5 0 0 0 4 22zM20 4.5A2.5 2.5 0 0 0 17.5 2H13v18h4.5A2.5 2.5 0 0 1 20 22z"/>',ledger:'<path d="M5 3h14v18H5zM8 7h8M8 11h8M8 15h5"/>',org:'<path d="M12 3a3 3 0 1 1 0 6 3 3 0 0 1 0-6ZM5 11a2.5 2.5 0 1 1 0 5 2.5 2.5 0 0 1 0-5Zm14 0a2.5 2.5 0 1 1 0 5 2.5 2.5 0 0 1 0-5ZM8 21v-1.5A3.5 3.5 0 0 1 11.5 16h1a3.5 3.5 0 0 1 3.5 3.5V21M1.5 21v-1a3 3 0 0 1 3-3h1M22.5 21v-1a3 3 0 0 0-3-3h-1"/>',admin:'<path d="M12 3 5 6v5c0 5 3 8 7 10 4-2 7-5 7-10V6zM9 12l2 2 4-5"/>'};return `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">${icons[name]||icons.home}</svg>`}
 function crest(theme=viewTheme()){
-  const img=theme==='nocturne'?'nocturne-collective-logo.webp':'sovereign-circle-logo.webp';
+  const img=theme==='nocturne'?'nocturne-collective-logo.webp':theme==='infernal'?'infernal-firm-logo.webp':'sovereign-circle-logo.webp';
   return `<div class="crest crest-${theme}"><img src="${img}" alt="" /></div>`;
 }
 function appLogo(extra=''){
@@ -287,12 +331,12 @@ function appLogo(extra=''){
 }
 function siteModeSwitcher(){
   if(!isAdminAccount()) return '';
-  const adminLabel=ui.siteMode==='admin' && ui.adminPreview==='moxie' ? 'Admin Home' : 'Admin';
+  const adminLabel=ui.siteMode==='admin' && ui.adminPreview!=='none' ? 'Admin Home' : 'Admin';
   return `<div class="site-mode-switch"><span>MODE</span><button class="${ui.siteMode==='player'?'active player':''}" onclick="setSiteMode('player')">Player</button><button class="${ui.siteMode==='admin'?'active admin':''}" onclick="setSiteMode('admin')">${adminLabel}</button></div>`;
 }
 function header(){
   const r=effectiveRole();
-  const consoleName=r==='game_master'?'Nocturne Console':r==='admin'?'Site Administration':'Sovereign Console';
+  const consoleName=r==='game_master'?'Nocturne Console':r==='admin'?'Site Administration':currentEntity()?.slug==='infernal-firm'?'Infernal Console':'Sovereign Console';
   const live=ui.demo?'Demo':'Live';
   return `<header class="topbar theme-${viewTheme()}"><div class="brand">${appLogo('header-logo')}<div><div class="eyebrow">Nocturnal Games · ${live}</div><h1>${consoleName}</h1></div></div><div class="role-pill">${esc(personLabel())} · ${roleLabel()}</div></header>`;
 }
@@ -300,7 +344,7 @@ function nav(){
   const lastLabel=effectiveRole()==='game_master'?'Score':(isAdminAccount()&&ui.siteMode==='player'?'Profile':'Admin');
   const unread=unreadMailCount();
   const items=[['home','Home']];
-  if(personalCounselEnabled()) items.push(['counsel','Counsel']);
+  if(counselAvailable()) items.push(['counsel','Counsel']);
   items.push(['mail',unread?`Mail ${unread}`:'Mail'],['book','Rules'],['ledger','Ledger'],['org','Orgs'],['admin',lastLabel]);
   return `<nav class="nav"><span class="build-version">NOCTURNAL v${APP_VERSION}</span>${items.map(([p,l])=>`<button class="${ui.activePage===p?'active':''}" onclick="go('${p}')">${icon(p)}<span>${l}</span></button>`).join('')}</nav>`;
 }
@@ -321,7 +365,7 @@ function total(){return ledgerItems().reduce((a,b)=>a+Number(b.total||0),0)}
 function tierAt(m){
   const idx=((Math.floor(m/200)-1)%4+4)%4+1;
   const list=ui.demo?DEMO.tiers:tiers;
-  return list.find(t=>Number(t.cycle_order)===idx)?.name || ['Small','Premium','Executive','Sovereign'][idx-1];
+  return list.find(t=>Number(t.cycle_order)===idx)?.name || (isInfernalGame()?'Reward':['Small','Premium','Executive','Sovereign'][idx-1]);
 }
 function nextMilestone(t=total()){const interval=Number(game?.reward_interval||200); return (Math.floor(Math.max(t,0)/interval)+1)*interval}
 function currentFloor(t=total()){const interval=Number(game?.reward_interval||200); return Math.floor(Math.max(t,0)/interval)*interval}
@@ -329,39 +373,42 @@ function progress(){const t=total(),floor=currentFloor(t),next=nextMilestone(t);
 function rewardRows(){
   if(ui.demo) return [];
   const tmap=new Map(tiers.map(t=>[t.id,t]));
-  return rewards.map(r=>({...r,tier:tmap.get(r.tier_id)?.name||'Reward',game:game?.name||'Sovereign Circle'}));
+  return rewards.map(r=>({...r,tier:tmap.get(r.tier_id)?.name||'Reward',game:game?.name||gameLabel()}));
 }
 
-function dashboardHero(kind,p){
-  const noct=kind==='moxie';
-  const logo=noct?'nocturne-collective-logo.webp':'sovereign-circle-logo.webp';
-  const title=noct?'Nocturne Collective':'The Sovereign Circle';
-  const sub=noct?'Game Master control over Sovereign progress':'Official game progress';
-  return `<section class="hero hero-${noct?'nocturne':'sovereign'}"><div class="hero-brand"><img src="${logo}" alt="${title} logo"><div><span>${noct?'GAME MASTER':'PLAYER DASHBOARD'}</span><h2>${title}</h2><p>${sub}</p></div></div><div class="hero-scoreline"><div><div class="score-big">${p.within}<span class="pts">PTS</span></div><div class="lifetime-inline">${p.t} lifetime points</div></div><div class="next-orb"><strong>${p.left}</strong><span>TO ${esc(p.tier.toUpperCase())}</span></div></div><div class="bar-wrap"><div class="bar-label"><span>${p.floor}</span><span>${p.next} · ${esc(p.tier.toUpperCase())}</span></div><div class="bar"><i style="width:${p.pct}%"></i></div></div></section>`;
+function dashboardHero(p){
+  const gm=effectiveRole()==='game_master';
+  const e=gm?gameMasterEntity():currentEntity();
+  const theme=e?.theme_key||viewTheme();
+  const logo=e?.logo_path|| (theme==='infernal'?'infernal-firm-logo.webp':theme==='nocturne'?'nocturne-collective-logo.webp':'sovereign-circle-logo.webp');
+  const title=e?.name||'Nocturnal Games';
+  const sub=gm?`Game Master control · ${playerName()}`:`${gameItemPlural()} · Official game progress`;
+  return `<section class="hero hero-${esc(theme)}"><div class="hero-brand"><img src="${esc(assetUrl(logo))}" alt="${esc(title)} logo"><div><span>${gm?'GAME MASTER':'PLAYER DASHBOARD'}</span><h2>${esc(title)}</h2><p>${esc(sub)}</p></div></div><div class="hero-scoreline"><div><div class="score-big">${p.within}<span class="pts">PTS</span></div><div class="lifetime-inline">${p.t} lifetime points</div></div><div class="next-orb"><strong>${p.left}</strong><span>TO ${esc(p.tier.toUpperCase())}</span></div></div><div class="bar-wrap"><div class="bar-label"><span>${p.floor}</span><span>${p.next} · ${esc(p.tier.toUpperCase())}</span></div><div class="bar"><i style="width:${p.pct}%"></i></div></div></section>`;
 }
 function home(){
   const p=progress(), rr=rewardRows(), available=rr.filter(r=>r.status==='available'), led=ledgerItems();
   if(effectiveRole()==='admin') return adminHome(p,available,led);
   const moxie=effectiveRole()==='game_master';
-  return `<main class="page">${dashboardHero(moxie?'moxie':'shawn',p)}
-  <section class="section presence-section"><div class="section-head"><h2>Game Status</h2><span>organization availability</span></div>${organizationPresence()}</section>
+  return `<main class="page">${dashboardHero(p)}
+  <section class="section presence-section"><div class="section-head"><h2>Game Status</h2><span>${esc(gameLabel())}</span></div>${organizationPresence()}</section>
   ${gameDesk()}
-  <section class="section"><div class="grid2"><div class="mini"><strong>${led.length}</strong><span>Scored directives</span></div><div class="mini"><strong>${available.length}</strong><span>Rewards ready</span></div></div></section>
-  ${moxie?`<section class="section"><div class="section-head"><h2>Game Master</h2><span>simple workflow</span></div><div class="gm-next-step"><div><span class="eyebrow">NEXT ACTION</span><h3>Score a Directive</h3><p>Enter the Directive number, tap the scoring awards that apply, and post the ledger.</p></div><button class="primary" onclick="go('admin')">Build Ledger</button></div><button class="ledger-link" onclick="go('ledger')"><span>Review scoring history</span><b>View Ledger ›</b></button></section>`:''}
+  <section class="section"><div class="grid2"><div class="mini"><strong>${led.length}</strong><span>Scored ${esc(gameItemPlural().toLowerCase())}</span></div><div class="mini"><strong>${available.length}</strong><span>Rewards ready</span></div></div></section>
+  ${moxie?`<section class="section"><div class="section-head"><h2>Game Master</h2><span>${esc(gameLabel())}</span></div><div class="gm-next-step"><div><span class="eyebrow">NEXT ACTION</span><h3>Score a ${esc(gameItemSingular())}</h3><p>Enter the ${esc(gameItemSingular())} number, tap the scoring awards that apply, and post the ledger.</p></div><button class="primary" onclick="go('admin')">Build Ledger</button></div><button class="ledger-link" onclick="go('ledger')"><span>Review scoring history</span><b>View Ledger ›</b></button></section>`:''}
   <section class="section"><div class="section-head"><h2>Reward Chest</h2><span>${available.length} available</span></div>${rewardChest(available,p,moxie)}</section>
-  <section class="section"><div class="section-head"><h2>Organizations</h2><span>Meet the boards</span></div>${organizationTeasers()}</section>
+  <section class="section"><div class="section-head"><h2>Organizations</h2><span>${esc(gameLabel())}</span></div>${organizationTeasers()}</section>
   <section class="section"><div class="section-head"><h2>Recent Activity</h2><span>Permanent ledger</span></div>${led.slice().reverse().slice(0,4).map(activity).join('')}</section></main>`;
 }
 function adminHome(p,available,led){
-  return `<main class="page"><section class="admin-command"><div><span class="eyebrow">Site Administration</span><h2>Nocturnal Games Control Room</h2><p>Maintenance, QA, and live game management stay here. Player Mode remains your normal profile.</p></div><div class="admin-crown">♛</div></section>
-  <section class="section"><div class="section-head"><h2>Experience Check</h2><span>switch when needed</span></div><div class="preview-grid"><button class="preview-card sovereign" onclick="setSiteMode('player')"><img src="sovereign-circle-logo.webp"><div><b>Return to Player</b><span>Your live Shawn profile</span></div></button><button class="preview-card nocturne" onclick="setAdminPreview('moxie')"><img src="nocturne-collective-logo.webp"><div><b>Preview Moxie</b><span>Inspect Game Master layout</span></div></button></div></section>
-  <section class="section"><div class="section-head"><h2>Organization Status</h2><span>live availability</span></div>${organizationPresence()}</section>
-  <section class="section"><div class="section-head"><h2>Live Game</h2><span>${p.t} lifetime points</span></div><div class="card admin-score"><div><strong>${p.left}</strong><span>points to ${esc(p.tier)}</span></div><div><strong>${available.length}</strong><span>rewards ready</span></div><div><strong>${led.length}</strong><span>scored directives</span></div></div></section>
-  <section class="section"><div class="section-head"><h2>Quick Control</h2><span>site owner</span></div><div class="quick-actions"><button class="action-tile" onclick="go('admin')"><b>Control Center</b><span>Settings / scoring / storage</span></button><button class="action-tile" onclick="go('counsel')"><b>Sovereign Counsel</b><span>Private AI strategy room</span></button><button class="action-tile" onclick="go('mail')"><b>Nocturnal Games Mail</b><span>Official game correspondence</span></button><button class="action-tile" onclick="go('org')"><b>Organizations</b><span>Review both rosters</span></button></div></section></main>`;
+  const counselTile=counselAvailable()?`<button class="action-tile" onclick="go('counsel')"><b>${esc(counselName())}</b><span>Private AI strategy room</span></button>`:'';
+  return `<main class="page"><section class="admin-command"><div><span class="eyebrow">Site Administration</span><h2>Nocturnal Games Control Room</h2><p>Each game stays isolated. Use the game selector above, then preview the exact player or Game Manager experience.</p></div><div class="admin-crown">♛</div></section>
+  <section class="section"><div class="section-head"><h2>Preview As</h2><span>read-only QA</span></div><div class="preview-grid"><button class="preview-card sovereign" onclick="setAdminPreview('shawn')"><img src="sovereign-circle-logo.webp"><div><b>Shawn</b><span>Sovereign player view</span></div></button><button class="preview-card nocturne" onclick="setAdminPreview('moxie')"><img src="nocturne-collective-logo.webp"><div><b>Moxie</b><span>Game Manager · selected game</span></div></button><button class="preview-card infernal" onclick="setAdminPreview('vex')"><img src="infernal-firm-logo.webp"><div><b>Vex</b><span>Infernal player view</span></div></button><button class="preview-card admin" onclick="setAdminPreview('none')"><div class="preview-admin-mark">♛</div><div><b>Admin</b><span>Return to control room</span></div></button></div></section>
+  <section class="section"><div class="section-head"><h2>Organization Status</h2><span>${esc(gameLabel())}</span></div>${organizationPresence()}</section>
+  <section class="section"><div class="section-head"><h2>Live Game</h2><span>${p.t} lifetime points · ${esc(gameLabel())}</span></div><div class="card admin-score"><div><strong>${p.left}</strong><span>points to ${esc(p.tier)}</span></div><div><strong>${available.length}</strong><span>rewards ready</span></div><div><strong>${led.length}</strong><span>scored ${esc(gameItemPlural().toLowerCase())}</span></div></div></section>
+  <section class="section"><div class="section-head"><h2>Quick Control</h2><span>${esc(gameLabel())}</span></div><div class="quick-actions"><button class="action-tile" onclick="go('admin')"><b>Control Center</b><span>Settings / scoring / storage</span></button>${counselTile}<button class="action-tile" onclick="go('mail')"><b>Nocturnal Games Mail</b><span>Official game correspondence</span></button><button class="action-tile" onclick="go('org')"><b>Organizations</b><span>Review active-game rosters</span></button></div></section></main>`;
 }
-function rewardChest(av,p,moxie=false){if(!av.length)return `<div class="empty">No unlocked rewards in the chest yet.<br><br><strong style="color:#d8dce2">Next:</strong> ${esc(p.tier)} at ${p.next} points.</div>`;return av.map(r=>`<div class="card reward-card"><div class="reward-icon">${r.tier==='Sovereign'?'♛':'◆'}</div><div class="reward-main"><h3>${esc(r.tier)} Reward</h3><p>Unlocked at ${r.milestone} · ${esc(r.game)}</p></div><span class="badge available">Available</span>${canRedeemView()?`<button class="use-btn" ${previewReadOnly()?'disabled':''} onclick="${previewReadOnly()?'previewOnly()':`askRedeem('${r.id}')`}">${moxie?"USE SHAWN'S":'USE'}</button>`:''}</div>`).join('')}
+function rewardChest(av,p,moxie=false){if(!av.length)return `<div class="empty">No unlocked rewards in the chest yet.<br><br><strong style="color:#d8dce2">Next:</strong> ${esc(p.tier)} at ${p.next} points.</div>`;return av.map(r=>`<div class="card reward-card"><div class="reward-icon">${r.tier==='Sovereign'?'♛':'◆'}</div><div class="reward-main"><h3>${esc(r.tier)} Reward</h3><p>Unlocked at ${r.milestone} · ${esc(r.game)}</p></div><span class="badge available">Available</span>${canRedeemView()?`<button class="use-btn" ${previewReadOnly()?'disabled':''} onclick="${previewReadOnly()?'previewOnly()':`askRedeem('${r.id}')`}">${moxie?`USE ${playerName().toUpperCase()}'S`:'USE'}</button>`:''}</div>`).join('')}
 function organizationTeasers(){
-  const data=entityRows().filter(e=>['sovereign-circle','nocturne-collective'].includes(e.slug));
+  const data=gameEntities();
   return `<div class="org-teasers">${data.map(e=>`<button class="org-teaser ${esc(e.theme_key||'')}" onclick="openOrganization('${e.slug}')"><img src="${esc(assetUrl(e.logo_path||''))}" alt=""><div><b>${esc(e.name)}</b><span>${memberRows().filter(m=>m.entity_slug===e.slug||m.entity_id===e.id).length} members</span></div><span class="chev">›</span></button>`).join('')}</div>`;
 }
 function activity(x){const sign=x.total>=0?'+':'';return `<div class="card activity"><div class="dot"></div><div class="copy"><h4>${esc(x.directive)}</h4><p>${esc(x.reason||x.title)}</p></div><div class="amount ${x.total<0?'negative':''}">${sign}${x.total}</div></div>`}
@@ -376,20 +423,20 @@ function gameDesk(){
     const pending=mine.filter(e=>e.recipient_entity_id===me&&e.status==='pending');
     return `<section class="section"><div class="section-head"><h2>Submission Review</h2><span>${pending.length} waiting</span></div>${pending.length?pending.map(submissionReviewCard).join(''):`<div class="empty">No photo evidence is waiting for Nocturne review.</div>`}</section>`;
   }
-  return `<section class="section"><div class="section-head"><h2>Active Directives</h2><span>${active.length} active</span></div>${active.length?active.map(d=>directiveCard(d)).join(''):`<div class="empty">No active Directives right now.</div>`}${mine.filter(e=>e.submitter_entity_id===me).slice(0,3).length?`<div class="submission-mini-title">Recent submissions</div>${mine.filter(e=>e.submitter_entity_id===me).slice(0,3).map(submissionHistoryCard).join('')}`:''}</section>`;
+  return `<section class="section"><div class="section-head"><h2>Active ${esc(gameItemPlural())}</h2><span>${active.length} active</span></div>${active.length?active.map(d=>directiveCard(d)).join(''):`<div class="empty">No active ${esc(gameItemPlural())} right now.</div>`}${mine.filter(e=>e.submitter_entity_id===me).slice(0,3).length?`<div class="submission-mini-title">Recent submissions</div>${mine.filter(e=>e.submitter_entity_id===me).slice(0,3).map(submissionHistoryCard).join('')}`:''}</section>`;
 }
 function directiveCard(d){
   const photos=setting('photo_submissions_enabled',true)!==false;
   const submitted=evidenceSubmissions.filter(e=>e.directive_id===d.id&&!e.deleted_at).length;
-  return `<div class="card directive-card"><div class="directive-top"><div><span class="directive-code">${esc(d.code||'DIRECTIVE')}</span><h3>${esc(d.title||d.code||'Directive')}</h3></div><span class="badge">${esc(String(d.status||'issued').toUpperCase())}</span></div>${d.description?`<p>${esc(d.description)}</p>`:''}<div class="directive-meta"><span>${submitted} photo submission${submitted===1?'':'s'}</span>${photos&&!previewReadOnly()?`<button class="primary compact" onclick="openEvidenceSubmit('${esc(d.id)}')">Submit Photo</button>`:''}</div></div>`;
+  return `<div class="card directive-card"><div class="directive-top"><div><span class="directive-code">${esc(d.code||'DIRECTIVE')}</span><h3>${esc(d.title||d.code||gameItemSingular())}</h3></div><span class="badge">${esc(String(d.status||'issued').toUpperCase())}</span></div>${d.description?`<p>${esc(d.description)}</p>`:''}<div class="directive-meta"><span>${submitted} photo submission${submitted===1?'':'s'}</span>${photos&&!previewReadOnly()?`<button class="primary compact" onclick="openEvidenceSubmit('${esc(d.id)}')">Submit Photo</button>`:''}</div></div>`;
 }
 function submissionHistoryCard(e){
   const d=directives.find(x=>x.id===e.directive_id);
-  return `<button class="card submission-row" onclick="openEvidence('${esc(e.id)}')"><div><b>${esc(d?.code||'Directive')}</b><span>${esc(e.caption||'Photo evidence')}</span></div><span class="submission-status ${esc(e.status)}">${esc(e.status)}</span></button>`;
+  return `<button class="card submission-row" onclick="openEvidence('${esc(e.id)}')"><div><b>${esc(d?.code||gameItemSingular())}</b><span>${esc(e.caption||'Photo evidence')}</span></div><span class="submission-status ${esc(e.status)}">${esc(e.status)}</span></button>`;
 }
 function submissionReviewCard(e){
   const d=directives.find(x=>x.id===e.directive_id);
-  return `<div class="card review-card"><div><span class="eyebrow">${esc(d?.code||'DIRECTIVE')}</span><h3>${esc(d?.title||'Photo Evidence')}</h3><p>${esc(e.caption||'No caption')}</p></div><div class="row"><button class="secondary" onclick="openEvidence('${esc(e.id)}')">View Photo</button>${counselAvailable()?`<button class="secondary" onclick="askCounselAboutEvidence('${esc(e.id)}')">Ask Counsel</button>`:''}<button class="primary" onclick="reviewEvidence('${esc(e.id)}','approved')">Approve</button></div></div>`;
+  return `<div class="card review-card"><div><span class="eyebrow">${esc(d?.code||gameItemSingular().toUpperCase())}</span><h3>${esc(d?.title||'Photo Evidence')}</h3><p>${esc(e.caption||'No caption')}</p></div><div class="row"><button class="secondary" onclick="openEvidence('${esc(e.id)}')">View Photo</button>${counselAvailable()?`<button class="secondary" onclick="askCounselAboutEvidence('${esc(e.id)}')">Ask Counsel</button>`:''}<button class="primary" onclick="reviewEvidence('${esc(e.id)}','approved')">Approve</button></div></div>`;
 }
 function mailRows(){
   if(ui.demo) return [];
@@ -399,7 +446,7 @@ function mailRows(){
 function mailPage(){
   if(setting('mail_enabled',true)===false) return `<main class="page"><section class="section"><div class="empty">Nocturnal Games Mail is disabled by Site Admin.</div></section></main>`;
   const rows=mailRows(), other=otherGameEntity();
-  return `<main class="page"><section class="mail-hero ${viewTheme()}"><div><span class="eyebrow">Official Game Channel</span><h2>Nocturnal Games Mail</h2><p>${esc(mailAddressForEntity(currentEntity()?.id))}</p></div><button class="primary" ${previewReadOnly()?'disabled':''} onclick="${previewReadOnly()?'previewOnly()':'openComposeMail()'}">New Mail</button></section><section class="section"><div class="mail-tabs"><button class="${mailMode==='inbox'?'active':''}" onclick="setMailMode('inbox')">Inbox <span>${unreadMailCount()}</span></button><button class="${mailMode==='sent'?'active':''}" onclick="setMailMode('sent')">Sent</button></div>${rows.length?`<div class="mail-list">${rows.map(mailCard).join('')}</div>`:`<div class="empty">${mailMode==='sent'?'Nothing sent yet.':'Inbox zero. No game mail waiting.'}</div>`}<div class="mail-route-note">Game-facing identities: ${esc(currentEntity()?.name||'—')} ↔ ${esc(other?.name||'—')}</div></section></main>`;
+  return `<main class="page"><section class="mail-hero ${viewTheme()}"><div><span class="eyebrow">Official Game Channel</span><h2>Nocturnal Games Mail</h2><p>${esc(mailAddressForEntity(currentEntity()?.id))}</p></div><button class="primary" ${previewReadOnly()?'disabled':''} onclick="${previewReadOnly()?'previewOnly()':'openComposeMail()'}">New Mail</button></section><section class="section"><div class="mail-tabs"><button class="${mailMode==='inbox'?'active':''}" onclick="setMailMode('inbox')">Inbox <span>${unreadMailCount()}</span></button><button class="${mailMode==='sent'?'active':''}" onclick="setMailMode('sent')">Sent</button></div>${rows.length?`<div class="mail-list">${rows.map(mailCard).join('')}</div>`:`<div class="empty">${mailMode==='sent'?'Nothing sent yet.':'Inbox zero. No game mail waiting.'}</div>`}<div class="mail-route-note">Active game: ${esc(gameLabel())} · ${esc(currentEntity()?.name||'—')} ↔ ${esc(other?.name||'—')}</div></section></main>`;
 }
 function mailCard(m){
   const incoming=m.recipient_entity_id===currentEntity()?.id;
@@ -458,10 +505,10 @@ function scoreRows(){
 }
 function rules(){
   const charter=charterRows(), scores=scoreRows(), awards=scores.filter(x=>Number(x.sort_order)<200), penalties=scores.filter(x=>Number(x.sort_order)>=200), rt=ui.demo?DEMO.tiers:tiers.slice().sort((a,b)=>a.cycle_order-b.cycle_order);
-  return `<main class="page"><section class="section" style="margin-top:4px"><div class="section-head"><h2>Official Rulebook</h2><span>database-backed v1</span></div><div class="tabs"><button class="chip active" onclick="scrollToId('charter')">Charter</button><button class="chip" onclick="scrollToId('scoring')">Scoring</button><button class="chip" onclick="scrollToId('rewards')">Rewards</button></div><div class="notice">Written Word Wins. Point history and reward use are retained permanently; later rule edits do not silently rewrite earlier scores.</div></section>
-  <section id="charter" class="section"><div class="section-head"><h2>Game Charter</h2><span>I–XXV</span></div>${charter.map(([h,b])=>`<details class="card rule"><summary>${esc(h)}</summary><div class="rule-body">${esc(b)}</div></details>`).join('')}</section>
+  return `<main class="page"><section class="section" style="margin-top:4px"><div class="section-head"><h2>${isInfernalGame()?'Firm Rules & Standing Orders':'Official Rulebook'}</h2><span>${esc(gameLabel())} · database-backed v1</span></div><div class="tabs"><button class="chip active" onclick="scrollToId('charter')">Charter</button><button class="chip" onclick="scrollToId('scoring')">Scoring</button><button class="chip" onclick="scrollToId('rewards')">Rewards</button></div><div class="notice">Written Word Wins. Point history and reward use are retained permanently; later rule edits do not silently rewrite earlier scores.</div></section>
+  <section id="charter" class="section"><div class="section-head"><h2>${isInfernalGame()?'Established Rules':'Game Charter'}</h2><span>${isInfernalGame()?charter.length+' current':'I–XXV'}</span></div>${charter.map(([h,b])=>`<details class="card rule"><summary>${esc(h)}</summary><div class="rule-body">${esc(b)}</div></details>`).join('')}</section>
   <section id="scoring" class="section"><div class="section-head"><h2>Scoring Breakdown</h2><span>awards</span></div>${awards.map(scoreCard).join('')}<div class="section-head" style="margin-top:17px"><h2>Penalties</h2><span>deductions</span></div>${penalties.map(scoreCard).join('')}</section>
-  <section id="rewards" class="section"><div class="section-head"><h2>Reward Breakdown</h2><span>repeats every 800</span></div>${rt.map(t=>`<div class="card score-row"><div><h4>${esc(t.name)} Reward</h4><p>${esc(t.description||'Reward tier')} · sequence repeats after Sovereign.</p></div><div class="points">${t.base_milestone}</div></div>`).join('')}</section></main>`;
+  <section id="rewards" class="section"><div class="section-head"><h2>Reward Breakdown</h2><span>established milestones</span></div>${rt.map(t=>`<div class="card score-row"><div><h4>${esc(t.name)} Reward</h4><p>${esc(t.description||'Reward tier')}${isInfernalGame()?'': ' · sequence repeats after Sovereign.'}</p></div><div class="points">${t.base_milestone}</div></div>`).join('')}</section></main>`;
 }
 function scoreCard(s){const label=s.label??s[0], pts=Number(s.points??s[1]), def=s.definition??s[2]??'';return `<div class="card score-row"><div><h4>${esc(label)}</h4><p>${esc(def)}</p></div><div class="points ${pts<0?'negative':''}">${pts>0?'+':''}${pts}</div></div>`}
 
@@ -483,12 +530,12 @@ function canControlOrgStatus(slug){
   return !!entity && membership?.entity_id===entity.id;
 }
 function organizationPresence(){
-  const slugs=['sovereign-circle','nocturne-collective'];
-  return `<div class="presence-grid">${slugs.map(slug=>{const e=entityRows().find(x=>x.slug===slug);if(!e)return '';const st=organizationStatusFor(slug);return `<div class="presence-card ${esc(e.theme_key||'')} ${st}"><div><span class="presence-dot"></span><div><b>${esc(e.name)}</b><small>${st==='open'?'Open for game activity':'Currently closed'}</small></div></div>${canControlOrgStatus(slug)?`<button onclick="toggleOrganizationStatus('${esc(slug)}')">${st==='open'?'Close':'Open'}</button>`:`<strong>${st.toUpperCase()}</strong>`}</div>`}).join('')}</div>`;
+  const data=gameEntities();
+  return `<div class="presence-grid">${data.map(e=>{const slug=e.slug;const st=organizationStatusFor(slug);return `<div class="presence-card ${esc(e.theme_key||'')} ${st}"><div><span class="presence-dot"></span><div><b>${esc(e.name)}</b><small>${st==='open'?'Open for game activity':'Currently closed'}</small></div></div>${canControlOrgStatus(slug)?`<button onclick="toggleOrganizationStatus('${esc(slug)}')">${st==='open'?'Close':'Open'}</button>`:`<strong>${st.toUpperCase()}</strong>`}</div>`}).join('')}</div>`;
 }
 function memberRows(){ return ui.demo ? DEMO.members : organizationMembers.map(m=>({...m,entity_slug:entityRows().find(e=>e.id===m.entity_id)?.slug})); }
 function organizationsPage(){
-  const all=entityRows();
+  const all=ui.demo?entityRows():gameEntities();
   const selected=all.find(e=>e.slug===ui.orgSlug)||all[0]||DEMO.entities[0];
   if(!selected) return `<main class="page"><div class="empty">No organizations configured.</div></main>`;
   const members=memberRows().filter(m=>(m.entity_slug===selected.slug)||(m.entity_id===selected.id)).sort((a,b)=>Number(a.sort_order)-Number(b.sort_order));
@@ -540,7 +587,7 @@ window.setPersonalCounselEnabled=async enabled=>{
 }
 
 function base64UrlToUint8Array(value){const pad='='.repeat((4-value.length%4)%4);const base64=(value+pad).replace(/-/g,'+').replace(/_/g,'/');const raw=atob(base64);return Uint8Array.from([...raw].map(c=>c.charCodeAt(0)))}
-async function invokePush(body){const {data,error}=await db.functions.invoke('nocturnal-push',{body:{game_id:game?.id,...body}});if(error)throw error;if(data?.error)throw new Error(data.error);return data}
+async function invokePush(body={}){const targetGameId=body?.game_id||game?.id;const {data,error}=await db.functions.invoke('nocturnal-push',{body:{...body,game_id:targetGameId}});if(error)throw error;if(data?.error)throw new Error(data.error);return data}
 window.enablePushNotifications=async()=>{
   if(pushBusy||ui.demo||previewReadOnly())return;
   if(isIOSDevice()&&!isStandalonePwa()){toast('On iPhone/iPad, add Nocturnal Games to your Home Screen and open the installed app before enabling Push.');return}
@@ -562,43 +609,45 @@ window.disablePushNotifications=async()=>{
   try{const reg=await navigator.serviceWorker.ready;const sub=await reg.pushManager.getSubscription();if(!sub){toast('Push is not enabled on this device');return}await invokePush({action:'unregister',endpoint:sub.endpoint});await sub.unsubscribe();currentPushEndpoint='';await loadRemote({silent:true});toast('Push notifications turned off on this device')}catch(e){toast(e?.message||String(e))}finally{pushBusy=false;render()}
 }
 window.testPushNotification=async()=>{if(pushBusy)return;pushBusy=true;render();try{const r=await invokePush({action:'test'});toast(r.delivered?`Test push sent to ${r.delivered} device${r.delivered===1?'':'s'}`:'Push test did not deliver')}catch(e){toast(e?.message||String(e))}finally{pushBusy=false;render()}}
-async function dispatchPushForSource(source_table,source_id){try{await invokePush({action:'dispatch-source',source_table,source_id})}catch(e){console.warn('Nocturnal Games push dispatch skipped',e)}}
-async function sendGamePush({recipient_entity_id,event_type,title,body,source_table=null,source_id=null}){try{return await invokePush({action:'notify',recipient_entity_id,event_type,title,body,source_table,source_id})}catch(e){console.warn('Nocturnal Games push notification skipped',e);return null}}
+async function dispatchPushForSource(source_table,source_id,game_id=game?.id){try{await invokePush({action:'dispatch-source',source_table,source_id,game_id})}catch(e){console.warn('Nocturnal Games push dispatch skipped',e)}}
+async function sendGamePush({recipient_entity_id,event_type,title,body,source_table=null,source_id=null,game_id=game?.id}){try{return await invokePush({action:'notify',recipient_entity_id,event_type,title,body,source_table,source_id,game_id})}catch(e){console.warn('Nocturnal Games push notification skipped',e);return null}}
 
 function admin(){
-  const r=effectiveRole(), rr=rewardRows(), gm=['game_master','admin'].includes(r);
-  const playerMode=isAdminAccount() && ui.siteMode==='player';
-  const playerUpgrade=accountRole()==='player' && !ui.demo;
+  const r=effectiveRole(),rr=rewardRows(),gm=['game_master','admin'].includes(r);
+  const playerMode=isAdminAccount()&&ui.siteMode==='player';
+  const playerUpgrade=accountRole()==='player'&&!ui.demo;
   const isMoxie=r==='game_master';
   if(playerMode){
     return `<main class="page"><section class="section" style="margin-top:4px"><div class="section-head"><h2>Player Profile</h2><span>your normal mode</span></div><div class="card player-profile-card"><div class="eyebrow">Sovereign Circle Player</div><h3>${esc(profile?.display_name||'Shawn')}</h3><p class="small-note">This is your live player account. Use the Player / Admin switch at the very top only when you need to maintain or QA the site.</p></div></section><section class="section account-section"><div class="section-head"><h2>Account</h2><span>live sync</span></div><div class="card account-card"><p class="small-note">${esc(session?.user?.email||'')}<br>Player Mode · Site Admin access available</p><div class="row"><button class="secondary" onclick="syncNow()">Sync</button><button class="danger" onclick="signOut()">Sign Out</button></div><button class="account-reset" onclick="emailPasswordReset()">Email Password Reset</button></div></section>${counselPreferenceCard()}${notificationSettingsCard()}</main>`;
   }
-  const moxiePreview=isMoxie && previewReadOnly();
-  const heading=r==='admin'?'Site Administration':isMoxie?(moxiePreview?'Moxie Preview':'Moxie Scoring Console'):'Administration';
-  const sub=r==='admin'?'full access':isMoxie?(moxiePreview?'Game Master layout · read-only QA':'Nocturne Game Master'):'Sovereign access';
-  const scoringIntro=gm?(isMoxie?`<div class="gm-workflow nocturne"><div class="workflow-step active"><b>1</b><span>Directive #</span></div><i>›</i><div class="workflow-step"><b>2</b><span>Tap awards</span></div><i>›</i><div class="workflow-step"><b>3</b><span>Post ledger</span></div></div>`:`<div class="gm-workflow"><div class="workflow-step active"><b>1</b><span>Paste ledger</span></div><i>›</i><div class="workflow-step"><b>2</b><span>Preview</span></div><i>›</i><div class="workflow-step"><b>3</b><span>Import</span></div></div>`):'';
+  const preview=previewReadOnly();
+  const previewName=ui.adminPreview==='moxie'?'Moxie':ui.adminPreview==='vex'?'Vex':ui.adminPreview==='shawn'?'Shawn':'';
+  const heading=r==='admin'?'Site Administration':preview?`${previewName} Preview`:isMoxie?'Moxie Scoring Console':'Administration';
+  const sub=r==='admin'?`${gameLabel()} · full access`:preview?`${roleLabel()} layout · read-only QA`:isMoxie?`Nocturne Game Master · ${gameLabel()}`:`${playerEntity()?.name||'Player'} access`;
+  const scoringIntro=gm?(isMoxie?`<div class="gm-workflow nocturne"><div class="workflow-step active"><b>1</b><span>${esc(gameItemSingular())} #</span></div><i>›</i><div class="workflow-step"><b>2</b><span>Tap awards</span></div><i>›</i><div class="workflow-step"><b>3</b><span>Post ledger</span></div></div>`:`<div class="gm-workflow"><div class="workflow-step active"><b>1</b><span>Paste ledger</span></div><i>›</i><div class="workflow-step"><b>2</b><span>Preview</span></div><i>›</i><div class="workflow-step"><b>3</b><span>Import</span></div></div>`):'';
   const scoringTool=isMoxie?scoreBuilderForm():bulkLedgerForm();
-  return `<main class="page"><section class="section" style="margin-top:4px"><div class="section-head"><h2>${heading}</h2><span>${sub}</span></div>${moxiePreview?`<div class="preview-context"><span>Moxie layout preview</span><button onclick="setSiteMode('admin')">Back to Admin Home</button></div>`:''}${scoringIntro}${isMoxie&&!moxiePreview?directiveIssuerCard():''}${gm?scoringTool:`<div class="card"><h3 style="margin-top:0">Permission Model</h3><p class="small-note">Your current game role is <strong>${roleLabel()}</strong>. Players can view the ledger and use unlocked rewards. Game Master/Admin roles can post official scoring ledgers.</p></div>`}${playerUpgrade?adminUpgradeCard():''}</section>
-  <section class="section"><div class="section-head"><h2>${isMoxie?'Reward Chest':'Reward Control'}</h2><span>${isMoxie?'shared with Shawn':'shared object'}</span></div>${adminRewards(rr)}</section>
-  ${r==='admin'?adminControlCenter()+`<section class="section"><div class="section-head"><h2>Experience QA</h2><span>admin tools</span></div><div class="card"><p class="small-note">Player Mode is your real Shawn profile. Use Preview Moxie from the Admin Home only when you need to inspect her interface.</p></div></section>`:''}
-  ${ui.demo?`<section class="section"><div class="card"><button class="secondary" onclick="toggleDemoViewer()">Preview ${ui.demoViewer==='moxie'?'Shawn / Player':'Moxie / Game Master'}</button><button class="danger" style="margin-left:8px" onclick="leaveDemo()">Exit Demo</button></div></section>`:`<section class="section account-section"><div class="section-head"><h2>Account</h2><span>live sync</span></div><div class="card account-card"><p class="small-note">${esc(session?.user?.email||'')}<br>${roleLabel(accountRole())} · Supabase connected</p><div class="row"><button class="secondary" onclick="syncNow()">Sync</button><button class="danger" onclick="signOut()">Sign Out</button></div><button class="account-reset" onclick="emailPasswordReset()">Email Password Reset</button></div></section>${counselPreferenceCard()}${notificationSettingsCard()}`}</main>`;
+  return `<main class="page"><section class="section" style="margin-top:4px"><div class="section-head"><h2>${heading}</h2><span>${sub}</span></div>${preview?`<div class="preview-context"><span>${esc(previewName)} layout preview · ${esc(gameLabel())}</span><button onclick="setAdminPreview('none')">Back to Admin Home</button></div>`:''}${scoringIntro}${isMoxie&&!preview?directiveIssuerCard():''}${gm?scoringTool:`<div class="card"><h3 style="margin-top:0">Permission Model</h3><p class="small-note">Your current game role is <strong>${roleLabel()}</strong>. Players can view the ledger and use unlocked rewards. Game Master/Admin roles can post official scoring ledgers.</p></div>`}${playerUpgrade?adminUpgradeCard():''}</section>
+  <section class="section"><div class="section-head"><h2>${isMoxie?'Reward Chest':'Reward Control'}</h2><span>${isMoxie?`shared with ${esc(playerName())}`:esc(gameLabel())}</span></div>${adminRewards(rr)}</section>
+  ${r==='admin'?adminControlCenter()+`<section class="section"><div class="section-head"><h2>Experience QA</h2><span>admin tools</span></div><div class="card"><p class="small-note">Player Mode is your real Shawn profile. Admin Preview lets you inspect Shawn, Moxie, or Vex without acting as that user.</p></div></section>`:''}
+  ${preview?`<section class="section"><div class="card"><div class="eyebrow">ADMIN PREVIEW</div><h3>${esc(previewName)} · read-only</h3><p class="small-note">This preview cannot send Mail, mark Mail as read, save evidence, score, redeem rewards, or change account settings.</p><button class="secondary" onclick="setAdminPreview('none')">Return to Admin</button></div></section>`:ui.demo?`<section class="section"><div class="card"><button class="secondary" onclick="toggleDemoViewer()">Preview ${ui.demoViewer==='moxie'?'Shawn / Player':'Moxie / Game Master'}</button><button class="danger" style="margin-left:8px" onclick="leaveDemo()">Exit Demo</button></div></section>`:`<section class="section account-section"><div class="section-head"><h2>Account</h2><span>live sync</span></div><div class="card account-card"><p class="small-note">${esc(session?.user?.email||'')}<br>${roleLabel(accountRole())} · Supabase connected</p><div class="row"><button class="secondary" onclick="syncNow()">Sync</button><button class="danger" onclick="signOut()">Sign Out</button></div><button class="account-reset" onclick="emailPasswordReset()">Email Password Reset</button></div></section>${counselPreferenceCard()}${notificationSettingsCard()}`}</main>`;
 }
 function adminUpgradeCard(){return `<div class="card admin-upgrade"><div class="eyebrow">Site Owner</div><h3>Unlock Site Admin</h3><p class="small-note">Use the one-time admin upgrade code to turn this account into the site owner. That enables the top-level Player / Admin mode switch and Moxie QA preview.</p><div class="field"><label>Admin Upgrade Code</label><input id="adminUpgradeCode" class="input" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="ADM-…"></div><button id="adminUpgradeButton" class="primary" onclick="claimAdminUpgrade()">Activate Site Admin</button></div>`}
 
 function directiveIssuerCard(){
-  return `<div class="card directive-issuer"><div class="bulk-title"><div><div class="eyebrow">Nocturne Desk</div><h3>Issue Directive</h3></div><span class="badge">NEW</span></div><p class="small-note">Create the official Directive and deliver it to Sovereign Circle through Nocturnal Games Mail in one step.</p><div class="form-grid"><div class="field"><label>Directive Code</label><input id="newDirectiveCode" class="input" placeholder="SD-004"></div><div class="field"><label>Title</label><input id="newDirectiveTitle" class="input" placeholder="Directive title"></div><div class="field"><label>Directive Text</label><textarea id="newDirectiveBody" class="input" rows="4" placeholder="Requirements, deadline, evidence rules…"></textarea></div><button class="primary" onclick="issueDirective()">Issue + Send to Sovereign</button></div></div>`;
+  const noun=gameItemSingular(),prefix=gameCodePrefix(),target=playerName();
+  const placeholder=isInfernalGame()?'REQ-017':'SD-004';
+  return `<div class="card directive-issuer"><div class="bulk-title"><div><div class="eyebrow">Nocturne Desk</div><h3>Issue ${esc(noun)}</h3></div><span class="badge">NEW</span></div><p class="small-note">Create the official ${esc(noun)} and deliver it to ${esc(playerEntity()?.name||target)} through Nocturnal Games Mail in one step.</p><div class="form-grid"><div class="field"><label>${esc(noun)} Code</label><input id="newDirectiveCode" class="input" placeholder="${esc(placeholder)}"></div><div class="field"><label>Title</label><input id="newDirectiveTitle" class="input" placeholder="${esc(noun)} title"></div><div class="field"><label>${esc(noun)} Text</label><textarea id="newDirectiveBody" class="input" rows="4" placeholder="Requirements, deadline, evidence rules…"></textarea></div><button class="primary" onclick="issueDirective()">Issue + Send to ${esc(target)}</button></div></div>`;
 }
-
 function scoreBuilderForm(){
   const rules=scoreRows();
   const awards=rules.filter(r=>Number(r.points)>=0);
   const penalties=rules.filter(r=>Number(r.points)<0);
   const recent=directives.slice().sort((a,b)=>String(b.created_at||b.issued_at||'').localeCompare(String(a.created_at||a.issued_at||''))).slice(0,5);
   const disabled=previewReadOnly()?'disabled':'';
+  const noun=gameItemSingular(),prefix=gameCodePrefix();
   const ruleButton=r=>`<label class="score-pick ${Number(r.points)<0?'penalty':''}"><input type="checkbox" class="score-rule-check" data-label="${esc(r.label)}" data-points="${Number(r.points)||0}" ${disabled} onchange="updateScoreBuilderTotal()"><span><b>${esc(r.label)}</b>${r.definition?`<small>${esc(r.definition)}</small>`:''}</span><strong class="points ${Number(r.points)<0?'negative':''}">${Number(r.points)>0?'+':''}${Number(r.points)}</strong></label>`;
-  return `<div class="card score-builder ${effectiveRole()==='game_master'?'nocturne':''}"><div class="bulk-title"><div><div class="eyebrow">Official Scoring</div><h3>Build Ledger</h3></div><span class="badge">TAP</span></div><p class="small-note">Type the Directive number, check what applies, then post it. Nocturnal Games handles the math and permanent ledger entries.</p>${previewReadOnly()?`<div class="notice">Preview only — this is exactly what Moxie sees, but Admin QA cannot post from preview mode.</div>`:''}<div class="field"><label>Directive Number</label><div class="directive-number-row"><span>SD-</span><input id="scoreDirectiveNumber" class="input" type="number" inputmode="numeric" min="1" max="9999" ${disabled} placeholder="004"></div>${recent.length?`<div class="directive-quick-picks">${recent.map(d=>{const m=String(d.code||'').match(/(\d{1,4})/);return m?`<button type="button" ${disabled} onclick="pickScoreDirective('${String(Number(m[1])).padStart(3,'0')}')">${esc(d.code)}</button>`:''}).join('')}</div>`:''}</div><div class="score-builder-section"><div class="score-builder-section-head"><b>Awards & Bonuses</b><span>tap everything that applies</span></div><div class="score-pick-grid">${awards.map(ruleButton).join('')}</div></div>${penalties.length?`<div class="score-builder-section"><div class="score-builder-section-head"><b>Penalties</b><span>only when applicable</span></div><div class="score-pick-grid">${penalties.map(ruleButton).join('')}</div></div>`:''}<div class="field score-note"><label>Scoring Note <span>(optional)</span></label><textarea id="scoreBuilderNote" class="input" rows="2" ${disabled} placeholder="Why this score was awarded…"></textarea></div><div class="score-builder-footer"><div class="score-builder-total"><span>Selected</span><strong id="scoreBuilderCount">0</strong></div><div class="score-builder-total"><span>Ledger Total</span><strong id="scoreBuilderTotal">+0</strong></div><button id="postScoreBuilder" class="primary" ${disabled} onclick="${previewReadOnly()?'previewOnly()':'postScoreBuilder()'}">Post Ledger</button></div></div>`;
+  return `<div class="card score-builder ${effectiveRole()==='game_master'?'nocturne':''}"><div class="bulk-title"><div><div class="eyebrow">Official Scoring</div><h3>Build Ledger</h3></div><span class="badge">TAP</span></div><p class="small-note">Type the ${esc(noun)} number, check what applies, then post it. Nocturnal Games handles the math and permanent ledger entries.</p>${previewReadOnly()?`<div class="notice">Preview only — this is exactly what Moxie sees, but Admin QA cannot post from preview mode.</div>`:''}<div class="field"><label>${esc(noun)} Number</label><div class="directive-number-row"><span>${esc(prefix)}-</span><input id="scoreDirectiveNumber" class="input" type="number" inputmode="numeric" min="1" max="9999" ${disabled} placeholder="${isInfernalGame()?'017':'004'}"></div>${recent.length?`<div class="directive-quick-picks">${recent.map(d=>{const m=String(d.code||'').match(/(\d{1,4})/);return m?`<button type="button" ${disabled} onclick="pickScoreDirective('${String(Number(m[1])).padStart(3,'0')}')">${esc(d.code)}</button>`:''}).join('')}</div>`:''}</div><div class="score-builder-section"><div class="score-builder-section-head"><b>Awards & Bonuses</b><span>tap everything that applies</span></div><div class="score-pick-grid">${awards.map(ruleButton).join('')}</div></div>${penalties.length?`<div class="score-builder-section"><div class="score-builder-section-head"><b>Penalties</b><span>only when applicable</span></div><div class="score-pick-grid">${penalties.map(ruleButton).join('')}</div></div>`:''}<div class="field score-note"><label>Scoring Note <span>(optional)</span></label><textarea id="scoreBuilderNote" class="input" rows="2" ${disabled} placeholder="Why this score was awarded…"></textarea></div><div class="score-builder-footer"><div class="score-builder-total"><span>Selected</span><strong id="scoreBuilderCount">0</strong></div><div class="score-builder-total"><span>Ledger Total</span><strong id="scoreBuilderTotal">+0</strong></div><button id="postScoreBuilder" class="primary" ${disabled} onclick="${previewReadOnly()?'previewOnly()':'postScoreBuilder()'}">Post Ledger</button></div></div>`;
 }
-
 function bulkLedgerForm(){
   const rows=bulkLedgerRows||[];
   const importable=rows.filter(r=>r.valid&&!r.duplicate);
@@ -612,7 +661,7 @@ function bulkLedgerForm(){
     ${bulkLedgerIgnored.length?`<details class="bulk-ignored"><summary>${bulkLedgerIgnored.length} ignored line${bulkLedgerIgnored.length===1?'':'s'}</summary><div>${bulkLedgerIgnored.map(x=>`<code>${esc(x)}</code>`).join('')}</div></details>`:''}
     <div class="row"><button class="secondary" onclick="clearBulkLedger()">Clear</button><button id="bulkImportButton" class="primary" ${previewReadOnly()||!importable.length?'disabled':''} onclick="${previewReadOnly()?'previewOnly()':'importBulkLedger()'}">Import ${importable.length} Row${importable.length===1?'':'s'}</button></div>
   </div>`:'';
-  return `<div class="card bulk-ledger-card ${effectiveRole()==='game_master'?'nocturne':''}"><div class="bulk-title"><div><div class="eyebrow">Official Scoring</div><h3>Paste Ledger</h3></div><span class="badge">BULK</span></div><p class="small-note">Paste the completed scoring ledger. The app checks it first; nothing changes until you preview and import.</p>${previewReadOnly()?`<div class="notice">Preview only — Moxie sees this importer, but Admin QA cannot post from preview mode.</div>`:''}<div class="field"><label>Ledger Text</label><textarea id="bulkLedgerText" class="input bulk-textarea" ${previewReadOnly()?'disabled':''} placeholder="SD-003\nDirective Completed +10\nAbove & Beyond +5\nMoxie Melt +3\nReason: Submission accepted"></textarea></div><div class="bulk-help"><span>Quick format:</span><code>SD-003 · Category +10</code><span>or paste spreadsheet/CSV rows</span></div><button class="secondary bulk-parse" ${previewReadOnly()?'disabled':''} onclick="${previewReadOnly()?'previewOnly()':'previewBulkLedger()'}">Preview Ledger</button>${preview}</div>`;
+  return `<div class="card bulk-ledger-card ${effectiveRole()==='game_master'?'nocturne':''}"><div class="bulk-title"><div><div class="eyebrow">Official Scoring</div><h3>Paste Ledger</h3></div><span class="badge">BULK</span></div><p class="small-note">Paste the completed scoring ledger. The app checks it first; nothing changes until you preview and import.</p>${previewReadOnly()?`<div class="notice">Preview only — Moxie sees this importer, but Admin QA cannot post from preview mode.</div>`:''}<div class="field"><label>Ledger Text</label><textarea id="bulkLedgerText" class="input bulk-textarea" ${previewReadOnly()?'disabled':''} placeholder="${gameCodePrefix()}-003\n${gameItemSingular()} Completed +10\nAbove & Beyond +5\nReason: Submission accepted"></textarea></div><div class="bulk-help"><span>Quick format:</span><code>${gameCodePrefix()}-003 · Category +10</code><span>or paste spreadsheet/CSV rows</span></div><button class="secondary bulk-parse" ${previewReadOnly()?'disabled':''} onclick="${previewReadOnly()?'previewOnly()':'previewBulkLedger()'}">Preview Ledger</button>${preview}</div>`;
 }
 function bulkPreviewRow(r,i){
   const state=!r.valid?'invalid':r.duplicate?'duplicate':r.ruleMismatch?'warning':'ready';
@@ -621,12 +670,13 @@ function bulkPreviewRow(r,i){
 }
 function normalizeDirectiveCode(value=''){
   const text=String(value).trim();
-  // Accept the ways the real scoring notices tend to label a directive:
-  // SD-003, SD #003, Directive #003, Sovereign Directive #003, or a bare #003 heading.
-  const m=text.match(/(?:\bSD\b|\bDIRECTIVE\b|SOVEREIGN\s+DIRECTIVE)\s*[-#:]?\s*(\d{1,4})/i)
-    || text.match(/^\s*#\s*(\d{1,4})(?:\b|\s|[-–—:])/i);
-  if(!m) return '';
-  return `SD-${String(Number(m[1])).padStart(3,'0')}`;
+  const request=text.match(/(?:\bREQ\b|\bREQUEST\b|OFFICIAL\s+REQUEST)\s*[-#:]?\s*(\d{1,4})/i);
+  if(request) return `REQ-${String(Number(request[1])).padStart(3,'0')}`;
+  const directive=text.match(/(?:\bSD\b|\bDIRECTIVE\b|SOVEREIGN\s+DIRECTIVE)\s*[-#:]?\s*(\d{1,4})/i);
+  if(directive) return `SD-${String(Number(directive[1])).padStart(3,'0')}`;
+  const bare=text.match(/^\s*#\s*(\d{1,4})(?:\b|\s|[-–—:])/i);
+  if(bare) return `${gameCodePrefix()}-${String(Number(bare[1])).padStart(3,'0')}`;
+  return '';
 }
 function cleanBulkLine(line=''){
   return String(line)
@@ -659,7 +709,7 @@ function parsePointValue(value){
 }
 function isBulkHeader(cols){
   const text=cols.map(x=>String(x).toLowerCase()).join(' ');
-  return text.includes('directive')&&text.includes('category')&&text.includes('point');
+  return (text.includes('directive')||text.includes('request'))&&text.includes('category')&&text.includes('point');
 }
 function existingLedgerSignatures(){
   const dmap=new Map(directives.map(d=>[d.id,normalizeDirectiveCode(d.code)||String(d.code).toUpperCase()]));
@@ -718,7 +768,7 @@ function parseBulkLedger(text){
     if(scoreMatch){
       let category=scoreMatch[1].trim();
       let directive=normalizeDirectiveCode(category)||currentDirective;
-      if(normalizeDirectiveCode(category)) category=category.replace(/(?:\bSD\b|SOVEREIGN\s+DIRECTIVE)\s*[-#:]?\s*\d{1,4}\s*[:|—-]?\s*/i,'').trim();
+      if(normalizeDirectiveCode(category)) category=category.replace(/(?:(?:\bSD\b|SOVEREIGN\s+DIRECTIVE|\bDIRECTIVE\b)|(?:\bREQ\b|OFFICIAL\s+REQUEST|\bREQUEST\b))\s*[-#:]?\s*\d{1,4}\s*[:|—-]?\s*/i,'').trim();
       if(!category||/^(total|score)$/i.test(category)){ignored.push(line);continue;}
       if(directive) currentDirective=directive;
       rows.push({directive,category,points:Number(scoreMatch[2].replace(/\s+/g,'')),reason:pendingReason,raw:line});
@@ -732,7 +782,7 @@ function parseBulkLedger(text){
     r.directive=normalizeDirectiveCode(r.directive)||String(r.directive||'').trim().toUpperCase();
     r.category=String(r.category||'').trim();
     r.valid=Boolean(r.directive&&r.category&&Number.isFinite(Number(r.points))&&Number(r.points)!==0);
-    if(!r.directive) r.message='No directive found. Add SD-### to the paste.';
+    if(!r.directive) r.message=`No ${gameItemSingular().toLowerCase()} found. Add ${gameCodePrefix()}-### to the paste.`;
     else if(!r.category) r.message='Scoring category is missing.';
     else if(!Number.isFinite(Number(r.points))||Number(r.points)===0) r.message='Points must be a non-zero number.';
     const sig=`${r.directive}|${r.category.toLowerCase()}|${Number(r.points)}`;
@@ -786,26 +836,28 @@ function adminControlCenter(){
   if(effectiveRole()!=='admin') return '';
   const auto=setting('photo_auto_delete_after_save',true)!==false;
   const eligible=evidenceSubmissions.filter(e=>!e.deleted_at&&e.delete_after&&new Date(e.delete_after)<=new Date()).length;
-  return `<section class="section admin-control-center"><div class="section-head"><h2>Owner Control Center</h2><span>database-backed</span></div>
+  const mailPlayerField=isInfernalGame()?`<div class="field"><label>Infernal Firm</label><input id="setInfMail" class="input" value="${esc(setting('infernal_mail_address','infernalfirm@hellscape.net'))}"></div>`:`<div class="field"><label>Sovereign Circle</label><input id="setSovMail" class="input" value="${esc(setting('sovereign_mail_address','chambers@sovereigncircle.org'))}"></div>`;
+  const counselPanel=isInfernalGame()?`<div class="card admin-panel"><div class="eyebrow">AI COUNSEL</div><h3>Infernal Counsel</h3><div class="diag-row"><span>Current status</span><b class="pending">NOT CONFIGURED</b></div><p class="small-note">Infernal Firm Counsel is intentionally disabled until its own personality, privacy boundary, and operating rules are defined. Sovereign and Nocturne Counsel remain unchanged in the Sovereign game.</p></div>`:`<div class="card admin-panel"><div class="eyebrow">AI COUNSEL</div><h3>Private Counsel Engine</h3><div class="diag-row"><span>OpenAI Responses API</span><b class="${counselHealth==='ready'?'ok':'pending'}">${counselHealth==='ready'?'READY':counselHealth==='needs_key'?'API KEY NEEDED':'CHECKING'}</b></div><label class="toggle-row"><input id="setCounselEnabled" type="checkbox" ${setting('counsel_enabled',true)!==false?'checked':''}><span>Enable Sovereign + Nocturne Counsel</span></label><div class="field"><label>Model</label><select id="setCounselModel" class="input"><option value="gpt-5.6-sol" ${setting('counsel_model','gpt-5.6-sol')==='gpt-5.6-sol'?'selected':''}>GPT-5.6 Sol — strongest</option><option value="gpt-5.6-terra" ${setting('counsel_model')==='gpt-5.6-terra'?'selected':''}>GPT-5.6 Terra — balanced</option><option value="gpt-5.6-luna" ${setting('counsel_model')==='gpt-5.6-luna'?'selected':''}>GPT-5.6 Luna — cheapest</option></select></div><div class="field"><label>Reasoning</label><select id="setCounselReasoning" class="input">${['none','low','medium','high','xhigh','max'].map(x=>`<option value="${x}" ${setting('counsel_reasoning_effort','medium')===x?'selected':''}>${x}</option>`).join('')}</select></div><div class="field"><label>Sovereign instruction supplement</label><textarea id="setSovCounselNotes" class="input" rows="3">${esc(setting('sovereign_counsel_notes',''))}</textarea></div><div class="field"><label>Nocturne instruction supplement</label><textarea id="setNocCounselNotes" class="input" rows="3">${esc(setting('nocturne_counsel_notes',''))}</textarea></div><button class="primary" onclick="saveCounselSettings()">Save Counsel Settings</button><button class="secondary" onclick="checkCounselHealth(true)">Test Counsel Connection</button></div>${aiUsagePanel()}`;
+  return `<section class="section admin-control-center"><div class="section-head"><h2>Owner Control Center</h2><span>${esc(gameLabel())} · database-backed</span></div>
   <div class="admin-setting-grid">
     <div class="card admin-panel"><div class="eyebrow">GAME MECHANICS</div><h3>Core Game</h3><div class="field"><label>Game Name</label><input id="setGameName" class="input" value="${esc(game?.name||'')}"></div><div class="field"><label>Reward Interval</label><input id="setRewardInterval" class="input" type="number" min="1" value="${Number(game?.reward_interval||200)}"></div><button class="primary" onclick="saveGameBasics()">Save Game Settings</button></div>
     <div class="card admin-panel"><div class="eyebrow">PHOTO STORAGE</div><h3>Evidence Retention</h3><div class="field"><label>Max Long Edge (px)</label><input id="setPhotoEdge" class="input" type="number" min="800" max="4000" value="${Number(setting('photo_max_long_edge',1800))}"></div><div class="field"><label>Compression Quality (0.50–0.95)</label><input id="setPhotoQuality" class="input" type="number" step="0.01" min="0.5" max="0.95" value="${Number(setting('photo_quality',0.82))}"></div><div class="field"><label>Delete Grace Period After Save (days)</label><input id="setPhotoRetention" class="input" type="number" min="1" max="365" value="${Number(setting('photo_retention_days_after_save',14))}"></div><label class="toggle-row"><input id="setPhotoAutoDelete" type="checkbox" ${auto?'checked':''}><span>Make saved photos eligible for auto-cleanup</span></label><button class="primary" onclick="savePhotoSettings()">Save Photo Settings</button></div>
-    <div class="card admin-panel"><div class="eyebrow">MAIL</div><h3>Official Addresses</h3><div class="field"><label>Sovereign Circle</label><input id="setSovMail" class="input" value="${esc(setting('sovereign_mail_address','chambers@sovereigncircle.org'))}"></div><div class="field"><label>Nocturne Collective</label><input id="setNocMail" class="input" value="${esc(setting('nocturne_mail_address','nocturnecollective@nightshift.net'))}"></div><label class="toggle-row"><input id="setMailEnabled" type="checkbox" ${setting('mail_enabled',true)!==false?'checked':''}><span>Enable Nocturnal Games Mail</span></label><button class="primary" onclick="saveMailSettings()">Save Mail Settings</button></div>
-    <div class="card admin-panel"><div class="eyebrow">AI COUNSEL</div><h3>Private Counsel Engine</h3><div class="diag-row"><span>OpenAI Responses API</span><b class="${counselHealth==='ready'?'ok':'pending'}">${counselHealth==='ready'?'READY':counselHealth==='needs_key'?'API KEY NEEDED':'CHECKING'}</b></div><label class="toggle-row"><input id="setCounselEnabled" type="checkbox" ${setting('counsel_enabled',true)!==false?'checked':''}><span>Enable Sovereign + Nocturne Counsel</span></label><div class="field"><label>Model</label><select id="setCounselModel" class="input"><option value="gpt-5.6-sol" ${setting('counsel_model','gpt-5.6-sol')==='gpt-5.6-sol'?'selected':''}>GPT-5.6 Sol — strongest</option><option value="gpt-5.6-terra" ${setting('counsel_model')==='gpt-5.6-terra'?'selected':''}>GPT-5.6 Terra — balanced</option><option value="gpt-5.6-luna" ${setting('counsel_model')==='gpt-5.6-luna'?'selected':''}>GPT-5.6 Luna — cheapest</option></select></div><div class="field"><label>Reasoning</label><select id="setCounselReasoning" class="input">${['none','low','medium','high','xhigh','max'].map(x=>`<option value="${x}" ${setting('counsel_reasoning_effort','medium')===x?'selected':''}>${x}</option>`).join('')}</select></div><div class="field"><label>Sovereign instruction supplement</label><textarea id="setSovCounselNotes" class="input" rows="3" placeholder="Optional owner notes…">${esc(setting('sovereign_counsel_notes',''))}</textarea></div><div class="field"><label>Nocturne instruction supplement</label><textarea id="setNocCounselNotes" class="input" rows="3" placeholder="Optional owner notes…">${esc(setting('nocturne_counsel_notes',''))}</textarea></div><button class="primary" onclick="saveCounselSettings()">Save Counsel Settings</button><button class="secondary" onclick="checkCounselHealth(true)">Test Counsel Connection</button></div>${aiUsagePanel()}<div class="card admin-panel"><div class="eyebrow">INTEGRATIONS</div><h3>Connection Status</h3><div class="diag-row"><span>In-app Counsel backend</span><b class="ok">DEPLOYED</b></div><div class="diag-row"><span>Push backend</span><b class="ok">DEPLOYED</b></div><label class="toggle-row"><input id="setPushEnabled" type="checkbox" ${setting('push_enabled',true)!==false?'checked':''}><span>Push notification master switch</span></label><button class="secondary" onclick="saveIntegrationSettings()">Save Integration</button></div>
+    <div class="card admin-panel"><div class="eyebrow">MAIL</div><h3>Official Addresses</h3>${mailPlayerField}<div class="field"><label>Nocturne Collective</label><input id="setNocMail" class="input" value="${esc(setting('nocturne_mail_address','nocturnecollective@nightshift.net'))}"></div><label class="toggle-row"><input id="setMailEnabled" type="checkbox" ${setting('mail_enabled',true)!==false?'checked':''}><span>Enable Nocturnal Games Mail</span></label><button class="primary" onclick="saveMailSettings()">Save Mail Settings</button></div>
+    ${counselPanel}
+    <div class="card admin-panel"><div class="eyebrow">INTEGRATIONS</div><h3>Connection Status</h3><div class="diag-row"><span>Push backend</span><b class="ok">DEPLOYED</b></div><label class="toggle-row"><input id="setPushEnabled" type="checkbox" ${setting('push_enabled',true)!==false?'checked':''}><span>Push notification master switch</span></label><button class="secondary" onclick="saveIntegrationSettings()">Save Integration</button></div>
   </div></section>
-  <section class="section"><div class="section-head"><h2>Storage Health</h2><span>${humanBytes(storageBytes())} stored</span></div><div class="card storage-health"><div><strong>${evidenceSubmissions.filter(e=>!e.deleted_at).length}</strong><span>photos in Nocturnal Games</span></div><div><strong>${eligible}</strong><span>eligible for cleanup</span></div><div><strong>${humanBytes(storageBytes())}</strong><span>current evidence size</span></div></div><button class="danger full-btn" ${eligible?'':'disabled'} onclick="purgeEligiblePhotos()">Purge ${eligible} Eligible Photo${eligible===1?'':'s'}</button></section>
-  <section class="section"><div class="section-head"><h2>Scoring Rules</h2><span>edit without redeploy</span></div><div class="admin-rule-list">${scoringRules.map(r=>`<div class="admin-rule-row"><span>${esc(r.label)}</span><input class="input score-admin-input" data-score-id="${esc(r.id)}" type="number" value="${Number(r.points)}"></div>`).join('')}</div><button class="primary full-btn" onclick="saveScoringRules()">Save Scoring Values</button></section>
-  <section class="section"><div class="section-head"><h2>Diagnostics</h2><span>v${APP_VERSION}</span></div><div class="card diagnostics"><div><span>Supabase</span><b class="ok">CONNECTED</b></div><div><span>Mail records</span><b>${mailMessages.length}</b></div><div><span>Evidence records</span><b>${evidenceSubmissions.length}</b></div><div><span>Counsel messages</span><b>${counselMessages.length}</b></div><div><span>Counsel service</span><b class="${counselHealth==='ready'?'ok':'pending'}">${counselHealth==='ready'?'READY':counselHealth==='needs_key'?'NEEDS API KEY':'CHECKING'}</b></div><div><span>Push queue</span><b>${notificationEvents.filter(n=>n.push_status==='queued').length}</b></div></div></section>`;
+  <section class="section"><div class="section-head"><h2>Storage Health</h2><span>${humanBytes(storageBytes())} stored</span></div><div class="card storage-health"><div><strong>${evidenceSubmissions.filter(e=>!e.deleted_at).length}</strong><span>photos in ${esc(gameLabel())}</span></div><div><strong>${eligible}</strong><span>eligible for cleanup</span></div><div><strong>${humanBytes(storageBytes())}</strong><span>current evidence size</span></div></div><button class="danger full-btn" ${eligible?'':'disabled'} onclick="purgeEligiblePhotos()">Purge ${eligible} Eligible Photo${eligible===1?'':'s'}</button></section>
+  <section class="section"><div class="section-head"><h2>Scoring Rules</h2><span>${esc(gameLabel())} only</span></div><div class="admin-rule-list">${scoringRules.map(r=>`<div class="admin-rule-row"><span>${esc(r.label)}</span><input class="input score-admin-input" data-score-id="${esc(r.id)}" type="number" value="${Number(r.points)}"></div>`).join('')}</div><button class="primary full-btn" onclick="saveScoringRules()">Save Scoring Values</button></section>
+  <section class="section"><div class="section-head"><h2>Diagnostics</h2><span>v${APP_VERSION}</span></div><div class="card diagnostics"><div><span>Supabase</span><b class="ok">CONNECTED</b></div><div><span>Active game</span><b>${esc(gameLabel())}</b></div><div><span>Mail records</span><b>${mailMessages.length}</b></div><div><span>Evidence records</span><b>${evidenceSubmissions.length}</b></div><div><span>Push queue</span><b>${notificationEvents.filter(n=>n.push_status==='queued').length}</b></div></div></section>`;
 }
-
-function adminRewards(rr){const av=rr.filter(r=>r.status==='available');if(!av.length)return `<div class="empty">No available rewards to redeem.</div>`;return av.map(r=>`<div class="card reward-card"><div class="reward-icon">◆</div><div class="reward-main"><h3>${esc(r.tier)} Reward</h3><p>Milestone ${r.milestone}</p></div>${canRedeemView()?`<button class="use-btn" ${previewReadOnly()?'disabled':''} onclick="${previewReadOnly()?'previewOnly()':`askRedeem('${r.id}')`}">${isGMView()?"USE SHAWN'S":'USE'}</button>`:''}</div>`).join('')}
+function adminRewards(rr){const av=rr.filter(r=>r.status==='available');if(!av.length)return `<div class="empty">No available rewards to redeem.</div>`;return av.map(r=>`<div class="card reward-card"><div class="reward-icon">◆</div><div class="reward-main"><h3>${esc(r.tier)} Reward</h3><p>Milestone ${r.milestone}</p></div>${canRedeemView()?`<button class="use-btn" ${previewReadOnly()?'disabled':''} onclick="${previewReadOnly()?'previewOnly()':`askRedeem('${r.id}')`}">${isGMView()?`USE ${playerName().toUpperCase()}'S`:'USE'}</button>`:''}</div>`).join('')}
 
 function loadingScreen(){return `<main class="auth-wrap"><div class="auth-card">${appLogo('auth-logo')}<div class="eyebrow auth-eyebrow">Nocturnal Games</div><h1>Opening the vault…</h1><div class="loader"></div><p class="small-note">NOCTURNAL v${APP_VERSION}</p></div></main>`}
 function loginScreen(){
   return `<main class="auth-wrap"><div class="auth-card">${appLogo('auth-logo')}<div class="eyebrow auth-eyebrow">Nocturnal Games</div><h1>Enter the Game</h1><p class="auth-copy">Sign in to your existing Nocturnal Games account.</p>${authNoticeHtml()}<div class="form-grid auth-form"><div class="field"><label>Email</label><input id="authEmail" class="input" type="email" autocomplete="email" autocapitalize="none" spellcheck="false" value="${esc(authDraft.email)}" placeholder="you@example.com"></div>${passwordField('authPassword','Password','current-password')}<button class="primary" onclick="signIn()">Sign In</button><button class="auth-link" onclick="openForgotPassword()">Forgot Password?</button>${authNeedsConfirmation&&authDraft.email?`<button class="secondary" onclick="resendConfirmation()">Resend Confirmation Email</button>`:''}<div class="auth-divider"><span>or</span></div><button class="secondary" onclick="openSignUp()">Create Account</button><button class="ghost" onclick="enterDemo()">Explore Demo</button></div><p class="small-note auth-foot">Accounts only receive the role tied to their one-time access code. Shawn and Moxie stay isolated to their own views.</p><div class="auth-version">NOCTURNAL v${APP_VERSION}</div></div></main>`;
 }
 function signupScreen(){
-  return `<main class="auth-wrap"><div class="auth-card">${appLogo('auth-logo')}<div class="eyebrow auth-eyebrow">New Account</div><h1>Create Nocturnal Games Login</h1><p class="auth-copy">Create the account first. After email confirmation, enter the one-time role code.</p>${authNoticeHtml()}<div class="form-grid auth-form"><div class="field"><label>Display Name</label><input id="authName" class="input" autocomplete="name" value="${esc(authDraft.name)}" placeholder="Shawn or Moxie"></div><div class="field"><label>Email</label><input id="authEmail" class="input" type="email" autocomplete="email" autocapitalize="none" spellcheck="false" value="${esc(authDraft.email)}" placeholder="you@example.com"></div>${passwordField('authPassword','Password','new-password')}${passwordField('authPasswordConfirm','Confirm Password','new-password')}<button class="primary" onclick="signUp()">Create Account</button><button class="auth-link" onclick="openLogin()">Back to Sign In</button></div><div class="auth-version">NOCTURNAL v${APP_VERSION}</div></div></main>`;
+  return `<main class="auth-wrap"><div class="auth-card">${appLogo('auth-logo')}<div class="eyebrow auth-eyebrow">New Account</div><h1>Create Nocturnal Games Login</h1><p class="auth-copy">Create the account first. After email confirmation, enter the one-time role code.</p>${authNoticeHtml()}<div class="form-grid auth-form"><div class="field"><label>Display Name</label><input id="authName" class="input" autocomplete="name" value="${esc(authDraft.name)}" placeholder="Shawn, Moxie, or Vex"></div><div class="field"><label>Email</label><input id="authEmail" class="input" type="email" autocomplete="email" autocapitalize="none" spellcheck="false" value="${esc(authDraft.email)}" placeholder="you@example.com"></div>${passwordField('authPassword','Password','new-password')}${passwordField('authPasswordConfirm','Confirm Password','new-password')}<button class="primary" onclick="signUp()">Create Account</button><button class="auth-link" onclick="openLogin()">Back to Sign In</button></div><div class="auth-version">NOCTURNAL v${APP_VERSION}</div></div></main>`;
 }
 function forgotPasswordScreen(){
   return `<main class="auth-wrap"><div class="auth-card">${appLogo('auth-logo')}<div class="eyebrow auth-eyebrow">Account Recovery</div><h1>Reset Password</h1><p class="auth-copy">Enter the account email. Nocturnal Games will send a secure Supabase recovery link back to this app.</p>${authNoticeHtml()}<div class="form-grid auth-form"><div class="field"><label>Email</label><input id="authEmail" class="input" type="email" autocomplete="email" autocapitalize="none" spellcheck="false" value="${esc(authDraft.email)}" placeholder="you@example.com"></div><button class="primary" onclick="sendPasswordReset()">Send Reset Email</button><button class="auth-link" onclick="openLogin()">Back to Sign In</button></div><p class="small-note auth-foot">If the email exists, use the newest reset email. Recovery links expire and are intended for one use.</p><div class="auth-version">NOCTURNAL v${APP_VERSION}</div></div></main>`;
@@ -819,7 +871,7 @@ function authScreen(){
   return loginScreen();
 }
 function pendingScreen(){
-  return `<main class="auth-wrap"><div class="auth-card">${appLogo('auth-logo')}<div class="eyebrow auth-eyebrow">Account Ready</div><h1>Unlock Game Access</h1><p class="auth-copy">Enter the one-time code for your assigned role. The role is applied only to this signed-in account.</p><div class="field"><label>One-Time Access Code</label><input id="accessCode" class="input" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="SC-… or NC-…"></div><div class="form-grid" style="margin-top:10px"><button id="claimButton" class="primary" onclick="claimAccess()">Unlock My Role</button><button class="secondary" onclick="enterDemo()">Preview the Game</button><button class="danger" onclick="signOut()">Sign Out</button></div><div class="card id-card"><span>Signed in as</span><strong>${esc(session?.user?.email||'')}</strong><span>Access ID</span><code>${esc(session?.user?.id||'')}</code></div><div class="auth-version">NOCTURNAL v${APP_VERSION}</div></div></main>`;
+  return `<main class="auth-wrap"><div class="auth-card">${appLogo('auth-logo')}<div class="eyebrow auth-eyebrow">Account Ready</div><h1>Unlock Game Access</h1><p class="auth-copy">Enter the one-time code for your assigned role. The role is applied only to this signed-in account.</p><div class="field"><label>One-Time Access Code</label><input id="accessCode" class="input" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="SC-…, NC-…, or VEX-…"></div><div class="form-grid" style="margin-top:10px"><button id="claimButton" class="primary" onclick="claimAccess()">Unlock My Role</button><button class="secondary" onclick="enterDemo()">Preview the Game</button><button class="danger" onclick="signOut()">Sign Out</button></div><div class="card id-card"><span>Signed in as</span><strong>${esc(session?.user?.email||'')}</strong><span>Access ID</span><code>${esc(session?.user?.id||'')}</code></div><div class="auth-version">NOCTURNAL v${APP_VERSION}</div></div></main>`;
 }
 function errorScreen(){return `<main class="auth-wrap"><div class="auth-card">${appLogo('auth-logo')}<div class="eyebrow auth-eyebrow">Connection issue</div><h1>Vault didn't open</h1><div class="notice">${esc(remoteError||'Unknown error')}</div><div class="form-grid"><button class="primary" onclick="syncNow()">Try Again</button><button class="secondary" onclick="enterDemo()">Open Demo</button><button class="danger" onclick="signOut()">Sign Out</button></div><div class="auth-version">NOCTURNAL v${APP_VERSION}</div></div></main>`}
 
@@ -834,7 +886,7 @@ function render(){
     if(remoteStatus==='error'){root.innerHTML=errorScreen();return}
   }
   const pages={home,counsel:counselPage,mail:mailPage,book:rules,ledger:ledgerPage,org:organizationsPage,admin};
-  root.innerHTML=siteModeSwitcher()+header()+(pages[ui.activePage]||home)()+nav();
+  root.innerHTML=siteModeSwitcher()+gameContextSwitcher()+header()+(pages[ui.activePage]||home)()+nav();
   if(ui.activePage==='admin'&&effectiveRole()==='admin'&&!ui.demo&&!aiUsageAttempted&&!aiUsageLoading){setTimeout(()=>refreshAiUsage(false),0)}
 }
 
@@ -890,32 +942,49 @@ async function boot(){
   if(session) await loadRemote(); else {remoteStatus='ready';render()}
 }
 
-function clearRemote(){game=null;membership=null;entities=[];organizationStatuses=[];organizationMembers=[];directives=[];pointTransactions=[];rewards=[];tiers=[];scoringRules=[];ruleSections=[];appSettings=[];mailMessages=[];evidenceSubmissions=[];notificationEvents=[];notificationPreference=null;pushSubscriptions=[];currentPushEndpoint='';pushBusy=false;counselThread=null;counselMessages=[];counselHealth='unknown';counselLastError='';aiUsage=null;aiUsageLoading=false;aiUsageError='';aiUsageAttempted=false;profile=null;stopRealtime()}
+function clearRemote(){game=null;membership=null;games=[];memberships=[];entities=[];organizationStatuses=[];organizationMembers=[];directives=[];pointTransactions=[];rewards=[];tiers=[];scoringRules=[];ruleSections=[];appSettings=[];mailMessages=[];evidenceSubmissions=[];notificationEvents=[];notificationPreference=null;pushSubscriptions=[];currentPushEndpoint='';pushBusy=false;counselThread=null;counselMessages=[];counselHealth='unknown';counselLastError='';aiUsage=null;aiUsageLoading=false;aiUsageError='';aiUsageAttempted=false;profile=null;stopRealtime()}
 async function loadRemote({silent=false}={}){
   if(!session) return;
   if(!silent){remoteStatus='loading'; render();}
   remoteError='';
   try{
-    const [prof,mems] = await Promise.all([
+    const [prof,mems]=await Promise.all([
       db.from('profiles').select('id,display_name').eq('id',session.user.id).maybeSingle(),
       db.from('game_memberships').select('game_id,user_id,entity_id,role').eq('user_id',session.user.id)
     ]);
-    if(prof.error) throw prof.error; if(mems.error) throw mems.error;
-    profile=prof.data;
-    if(!mems.data?.length){membership=null;remoteStatus='pending';render();return}
-    const ids=mems.data.map(m=>m.game_id);
+    if(prof.error) throw prof.error;if(mems.error) throw mems.error;
+    profile=prof.data;memberships=mems.data||[];
+    if(!memberships.length){membership=null;games=[];remoteStatus='pending';render();return}
+    const ids=[...new Set(memberships.map(m=>m.game_id))];
     const gres=await db.from('games').select('*').in('id',ids);
     if(gres.error) throw gres.error;
-    game=gres.data?.find(g=>g.slug===CONFIG.gameSlug)||gres.data?.[0];
-    if(!game){remoteStatus='pending';render();return}
-    membership=mems.data.find(m=>m.game_id===game.id && m.user_id===session.user.id);
-    if(membership?.role!=='admin'){ui.siteMode='player';ui.adminPreview='none'; if(membership?.role==='game_master') ui.orgSlug='nocturne-collective';}
-    else {
+    games=gres.data||[];
+    const admin=memberships.some(m=>m.role==='admin');
+    if(!admin){
+      ui.siteMode='player';ui.adminPreview='none';
+    }else{
       if(!['player','admin'].includes(ui.siteMode)) ui.siteMode='player';
-      if(!['none','moxie'].includes(ui.adminPreview)) ui.adminPreview='none';
+      if(!['none','moxie','vex','shawn'].includes(ui.adminPreview)) ui.adminPreview='none';
     }
+    let desired=ui.activeGameSlug||CONFIG.gameSlug;
+    if(admin&&ui.siteMode==='player') desired=CONFIG.gameSlug;
+    if(admin&&ui.siteMode==='admin'&&ui.adminPreview==='vex') desired='infernal-firm-game';
+    if(admin&&ui.siteMode==='admin'&&ui.adminPreview==='shawn') desired=CONFIG.gameSlug;
+    let chosen=games.find(g=>g.slug===desired);
+    if(!chosen) chosen=games.find(g=>g.slug===CONFIG.gameSlug)||games[0];
+    game=chosen||null;
+    if(!game){remoteStatus='pending';render();return}
+    ui.activeGameSlug=game.slug;
+    membership=memberships.find(m=>m.game_id===game.id&&m.user_id===session.user.id)||null;
+    if(!membership){remoteStatus='pending';render();return}
+    if(!admin && membership.role==='game_master') ui.orgSlug='nocturne-collective';
+    if(!admin && membership.role==='player') ui.orgSlug=isInfernalGame()?'infernal-firm':'sovereign-circle';
+    if(admin&&ui.siteMode==='player') ui.orgSlug='sovereign-circle';
+    if(admin&&ui.siteMode==='admin'&&ui.adminPreview==='vex') ui.orgSlug='infernal-firm';
+    if(admin&&ui.siteMode==='admin'&&ui.adminPreview==='shawn') ui.orgSlug='sovereign-circle';
+    if(admin&&ui.siteMode==='admin'&&ui.adminPreview==='moxie') ui.orgSlug='nocturne-collective';
     saveUI();
-    const [er,osr,om,dr,pr,rr,tr,sr,rb,aset,mail,evid,notif,npref,psubs,cth,cmsg] = await Promise.all([
+    const [er,osr,om,dr,pr,rr,tr,sr,rb,aset,mail,evid,notif,npref,psubs,cth,cmsg]=await Promise.all([
       db.from('game_entities').select('*').order('name'),
       db.from('organization_status').select('*').eq('game_id',game.id),
       db.from('organization_members').select('*').eq('game_id',game.id).eq('is_active',true).order('sort_order'),
@@ -938,10 +1007,8 @@ async function loadRemote({silent=false}={}){
     entities=er.data||[];organizationStatuses=osr.data||[];organizationMembers=om.data||[];directives=dr.data||[];pointTransactions=pr.data||[];rewards=rr.data||[];tiers=tr.data||[];scoringRules=sr.data||[];ruleSections=rb.data||[];appSettings=aset.data||[];mailMessages=mail.data||[];evidenceSubmissions=evid.data||[];notificationEvents=notif.data||[];notificationPreference=npref.data||null;pushSubscriptions=psubs.data||[];counselThread=cth.data||null;counselMessages=cmsg.data||[];
     currentPushEndpoint='';
     if(pushSupported()){try{const reg=await navigator.serviceWorker.getRegistration();currentPushEndpoint=(await reg?.pushManager?.getSubscription())?.endpoint||''}catch{}}
-    remoteStatus='ready';
-    startRealtime();
-    render();
-    if(counselHealth==='unknown' && personalCounselEnabled()) checkCounselHealth();
+    remoteStatus='ready';startRealtime();render();
+    if(counselHealth==='unknown'&&counselAvailable()) checkCounselHealth();
   }catch(e){remoteError=e?.message||String(e);remoteStatus='error';render()}
 }
 function mailStateKey(rows=mailMessages){
@@ -1024,9 +1091,10 @@ window.scrollToId=id=>document.getElementById(id)?.scrollIntoView({behavior:'smo
 window.enterDemo=()=>{ui.demo=true;ui.demoViewer='shawn';ui.activePage='home';saveUI();remoteStatus='ready';render();toast('Demo mode — live database unchanged')}
 window.leaveDemo=()=>{ui.demo=false;saveUI();if(session)loadRemote();else{remoteStatus='ready';render()}}
 window.toggleDemoViewer=()=>{ui.demoViewer=ui.demoViewer==='moxie'?'shawn':'moxie';saveUI();render();toast(ui.demoViewer==='moxie'?'Moxie / Game Master preview':'Shawn / Player preview')}
-window.setSiteMode=mode=>{if(!isAdminAccount())return;ui.siteMode=mode==='admin'?'admin':'player';ui.adminPreview='none';ui.activePage='home';saveUI();render();window.scrollTo({top:0,behavior:'smooth'})}
-window.setAdminPreview=v=>{if(!isAdminAccount())return;ui.siteMode='admin';ui.adminPreview=v==='moxie'?'moxie':'none';ui.activePage='home';saveUI();render();window.scrollTo({top:0,behavior:'smooth'})}
-window.previewOnly=()=>toast('Moxie preview is read-only. Tap Admin Home at the top to return.')
+window.setActiveGame=async slug=>{if(ui.demo)return;const target=availableGameRows().find(g=>g.slug===slug);if(!target)return;ui.activeGameSlug=target.slug;if(isAdminAccount()&&ui.siteMode==='admin'&&ui.adminPreview==='vex'&&target.slug!=='infernal-firm-game')ui.adminPreview='none';if(isAdminAccount()&&ui.siteMode==='admin'&&ui.adminPreview==='shawn'&&target.slug!=='sovereign-circle-game')ui.adminPreview='none';ui.activePage='home';saveUI();await loadRemote();window.scrollTo({top:0,behavior:'smooth'})}
+window.setSiteMode=async mode=>{if(!isAdminAccount())return;ui.siteMode=mode==='admin'?'admin':'player';ui.adminPreview='none';if(ui.siteMode==='player')ui.activeGameSlug=CONFIG.gameSlug;ui.activePage='home';saveUI();await loadRemote();window.scrollTo({top:0,behavior:'smooth'})}
+window.setAdminPreview=async v=>{if(!isAdminAccount())return;ui.siteMode='admin';ui.adminPreview=['moxie','vex','shawn'].includes(v)?v:'none';if(ui.adminPreview==='vex')ui.activeGameSlug='infernal-firm-game';if(ui.adminPreview==='shawn')ui.activeGameSlug=CONFIG.gameSlug;ui.activePage='home';saveUI();await loadRemote();window.scrollTo({top:0,behavior:'smooth'})}
+window.previewOnly=()=>toast('Admin preview is read-only. Return to Admin to make changes.')
 window.openOrganization=slug=>{ui.orgSlug=slug;ui.activePage='org';saveUI();render();window.scrollTo({top:0,behavior:'smooth'})}
 window.setOrganization=slug=>{ui.orgSlug=slug;saveUI();render()}
 window.toggleOrganizationStatus=async slug=>{
@@ -1147,25 +1215,49 @@ window.signOut=async()=>{stopRealtime();await db.auth.signOut();session=null;cle
 
 
 window.setMailMode=mode=>{mailMode=mode==='sent'?'sent':'inbox';render()}
+function mailRecipientOptions(){
+  if(ui.demo) return [];
+  const gmView=currentEntity()?.slug==='nocturne-collective';
+  if(!gmView) return [];
+  return availableGameRows().map(g=>{
+    const recipient=entityRows().find(e=>e.id===g.player_entity_id);
+    return recipient?{gameId:g.id,gameSlug:g.slug,recipientId:recipient.id,label:`${recipient.name} · ${mailAddressForEntity(recipient.id)}`} : null;
+  }).filter(Boolean);
+}
 window.openComposeMail=(replyId='',prefillBody='',prefillSubject='',prefillCategory='message')=>{
   if(ui.demo||previewReadOnly())return;
-  const reply=mailMessages.find(m=>m.id===replyId);const other=otherGameEntity();if(!other)return;
+  const reply=mailMessages.find(m=>m.id===replyId);
+  const other=otherGameEntity();if(!other)return;
   const subject=reply?(/^re:/i.test(reply.subject)?reply.subject:`Re: ${reply.subject}`):(prefillSubject||'');
-  document.body.insertAdjacentHTML('beforeend',`<div class="modal-back" id="composeModal"><div class="modal mail-compose"><div class="eyebrow">FROM ${esc(currentEntity()?.name||'')}</div><h3>New Nocturnal Games Mail</h3><p class="small-note">To ${esc(other.name)} · ${esc(mailAddressForEntity(other.id))}</p><div class="field"><label>Type</label><select id="mailCategory" class="input"><option value="message" ${prefillCategory==='message'?'selected':''}>Message</option><option value="directive" ${prefillCategory==='directive'?'selected':''}>Directive</option><option value="submission" ${prefillCategory==='submission'?'selected':''}>Submission</option><option value="scoring" ${prefillCategory==='scoring'?'selected':''}>Scoring</option><option value="ruling" ${prefillCategory==='ruling'?'selected':''}>Ruling</option><option value="reward" ${prefillCategory==='reward'?'selected':''}>Reward</option></select></div><div class="field"><label>Subject</label><input id="mailSubject" class="input" value="${esc(subject)}" placeholder="Subject"></div><div class="field"><label>Message</label><textarea id="mailBody" class="input" rows="8" placeholder="Official game correspondence…">${esc(prefillBody||'')}</textarea></div><div class="row"><button class="secondary" onclick="document.getElementById('composeModal')?.remove()">Cancel</button><button class="primary" onclick="sendMail('${esc(replyId)}')">Send to ${esc(other.name)}</button></div></div></div>`);
+  const options=mailRecipientOptions();
+  const recipientField=reply||!options.length?`<p class="small-note">To ${esc(other.name)} · ${esc(mailAddressForEntity(other.id))}</p>`:`<div class="field"><label>To</label><select id="mailRecipient" class="input">${options.map(o=>`<option value="${esc(o.gameId)}|${esc(o.recipientId)}" ${o.gameId===game?.id?'selected':''}>${esc(o.label)}</option>`).join('')}</select></div>`;
+  const categories=[['message','Message'],['directive','Directive'],['request','Request'],['submission','Submission'],['scoring','Scoring'],['ruling','Ruling'],['reward','Reward']];
+  document.body.insertAdjacentHTML('beforeend',`<div class="modal-back" id="composeModal"><div class="modal mail-compose"><div class="eyebrow">FROM ${esc(currentEntity()?.name||'')}</div><h3>New Nocturnal Games Mail</h3>${recipientField}<div class="field"><label>Type</label><select id="mailCategory" class="input">${categories.map(([v,l])=>`<option value="${v}" ${prefillCategory===v?'selected':''}>${esc(l)}</option>`).join('')}</select></div><div class="field"><label>Subject</label><input id="mailSubject" class="input" value="${esc(subject)}" placeholder="Subject"></div><div class="field"><label>Message</label><textarea id="mailBody" class="input" rows="8" placeholder="Official game correspondence…">${esc(prefillBody||'')}</textarea></div><div class="row"><button class="secondary" onclick="document.getElementById('composeModal')?.remove()">Cancel</button><button class="primary" onclick="sendMail('${esc(replyId)}')">Send</button></div></div></div>`);
 }
 window.sendMail=async(replyId='')=>{
   const subject=document.getElementById('mailSubject')?.value.trim()||'';const body=document.getElementById('mailBody')?.value.trim()||'';const category=document.getElementById('mailCategory')?.value||'message';
   if(!subject||!body){toast('Subject and message are required');return}
-  const sender=currentEntity(),recipient=otherGameEntity();if(!sender||!recipient||!game)return;
-  const reply=mailMessages.find(m=>m.id===replyId);const id=crypto.randomUUID();
-  const payload={id,game_id:game.id,thread_id:reply?(reply.thread_id||reply.id):id,in_reply_to:reply?.id||null,sender_entity_id:sender.id,recipient_entity_id:recipient.id,sender_user_id:session.user.id,subject,body,category};
+  const reply=mailMessages.find(m=>m.id===replyId);
+  let targetGame=game,targetMembership=membership,sender=currentEntity(),recipient=otherGameEntity();
+  if(!reply&&document.getElementById('mailRecipient')){
+    const [gid,rid]=String(document.getElementById('mailRecipient').value||'').split('|');
+    targetGame=games.find(g=>g.id===gid)||game;
+    targetMembership=memberships.find(m=>m.game_id===targetGame?.id)||membership;
+    sender=entityRows().find(e=>e.id===targetGame?.game_master_entity_id)||sender;
+    recipient=entityRows().find(e=>e.id===rid)||entityRows().find(e=>e.id===targetGame?.player_entity_id)||recipient;
+  }
+  if(!sender||!recipient||!targetGame)return;
+  const id=crypto.randomUUID();
+  const payload={id,game_id:targetGame.id,thread_id:reply?(reply.thread_id||reply.id):id,in_reply_to:reply?.id||null,sender_entity_id:sender.id,recipient_entity_id:recipient.id,sender_user_id:session.user.id,subject,body,category};
   const {error}=await db.from('mail_messages').insert(payload);if(error){toast(error.message);return}
-  dispatchPushForSource('mail_messages',id);
-  document.getElementById('composeModal')?.remove();await loadRemote({silent:true});mailMode='sent';ui.activePage='mail';saveUI();render();toast(`Sent to ${recipient.name}`)
+  dispatchPushForSource('mail_messages',id,targetGame.id);
+  document.getElementById('composeModal')?.remove();
+  if(targetGame.id!==game?.id){ui.activeGameSlug=targetGame.slug;saveUI();}
+  await loadRemote({silent:true});mailMode='sent';ui.activePage='mail';saveUI();render();toast(`Sent to ${recipient.name}`)
 }
 window.openMail=async id=>{
   const m=mailMessages.find(x=>x.id===id);if(!m)return;const incoming=m.recipient_entity_id===currentEntity()?.id;
-  if(incoming&&!m.recipient_read_at&&!ui.demo){
+  if(incoming&&!m.recipient_read_at&&!ui.demo&&!previewReadOnly()){
     const readAt=new Date().toISOString();
     const {error}=await db.from('mail_messages').update({recipient_read_at:readAt}).eq('id',m.id);
     if(!error)m.recipient_read_at=readAt;
@@ -1175,18 +1267,19 @@ window.openMail=async id=>{
 }
 window.issueDirective=async()=>{
   if(previewReadOnly())return previewOnly();
+  const noun=gameItemSingular();
   const code=normalizeDirectiveCode(document.getElementById('newDirectiveCode')?.value||'');const title=document.getElementById('newDirectiveTitle')?.value.trim()||'';const body=document.getElementById('newDirectiveBody')?.value.trim()||'';
-  if(!code||!title||!body){toast('Code, title and Directive text are required');return}
+  if(!code||!title||!body){toast(`Code, title and ${noun} text are required`);return}
   const now=new Date().toISOString();const ins=await db.from('directives').insert({game_id:game.id,code,title,description:body,status:'issued',issued_by_user_id:session.user.id,issued_at:now}).select().single();if(ins.error){toast(ins.error.message);return}
   const sender=currentEntity(),recipient=otherGameEntity();const mid=crypto.randomUUID();
-  const mail=await db.from('mail_messages').insert({id:mid,game_id:game.id,thread_id:mid,sender_entity_id:sender.id,recipient_entity_id:recipient.id,sender_user_id:session.user.id,subject:`${code} — ${title}`,body,category:'directive'});
-  if(mail.error){toast(`Directive created, but Mail failed: ${mail.error.message}`);await loadRemote({silent:true});return}
-  dispatchPushForSource('mail_messages',mid);
+  const mail=await db.from('mail_messages').insert({id:mid,game_id:game.id,thread_id:mid,sender_entity_id:sender.id,recipient_entity_id:recipient.id,sender_user_id:session.user.id,subject:`${code} — ${title}`,body,category:isInfernalGame()?'request':'directive'});
+  if(mail.error){toast(`${noun} created, but Mail failed: ${mail.error.message}`);await loadRemote({silent:true});return}
+  dispatchPushForSource('mail_messages',mid,game.id);
   await loadRemote({silent:true});toast(`${code} issued to ${recipient.name}`)
 }
 window.openEvidenceSubmit=id=>{
   const d=directives.find(x=>x.id===id);if(!d||previewReadOnly())return;
-  document.body.insertAdjacentHTML('beforeend',`<div class="modal-back" id="evidenceModal"><div class="modal evidence-submit"><div class="eyebrow">${esc(d.code||'DIRECTIVE')}</div><h3>Submit Photo Evidence</h3><p class="small-note">Nocturnal Games compresses the photo before private upload. Real photographs only.</p><div class="field"><label>Photo</label><input id="evidenceFile" class="input file-input" type="file" accept="image/*"></div><div class="field"><label>Caption (optional)</label><textarea id="evidenceCaption" class="input" rows="3" placeholder="Anything Nocturne should know…"></textarea></div><div class="row"><button class="secondary" onclick="document.getElementById('evidenceModal')?.remove()">Cancel</button><button id="evidenceSubmitButton" class="primary" onclick="submitEvidence('${esc(id)}')">Submit to Nocturne</button></div></div></div>`)
+  document.body.insertAdjacentHTML('beforeend',`<div class="modal-back" id="evidenceModal"><div class="modal evidence-submit"><div class="eyebrow">${esc(d.code||gameItemSingular().toUpperCase())}</div><h3>Submit Photo Evidence</h3><p class="small-note">Nocturnal Games compresses the photo before private upload. Real photographs only.</p><div class="field"><label>Photo</label><input id="evidenceFile" class="input file-input" type="file" accept="image/*"></div><div class="field"><label>Caption (optional)</label><textarea id="evidenceCaption" class="input" rows="3" placeholder="Anything Nocturne should know…"></textarea></div><div class="row"><button class="secondary" onclick="document.getElementById('evidenceModal')?.remove()">Cancel</button><button id="evidenceSubmitButton" class="primary" onclick="submitEvidence('${esc(id)}')">Submit to Nocturne</button></div></div></div>`)
 }
 async function imageElementFromFile(file){return await new Promise((resolve,reject)=>{const url=URL.createObjectURL(file);const img=new Image();img.onload=()=>{URL.revokeObjectURL(url);resolve(img)};img.onerror=()=>{URL.revokeObjectURL(url);reject(new Error('This image format could not be compressed in the browser.'))};img.src=url})}
 async function compressPhoto(file){
@@ -1200,7 +1293,7 @@ window.submitEvidence=async directiveId=>{
 }
 window.openEvidence=async id=>{
   const e=evidenceSubmissions.find(x=>x.id===id);if(!e||e.deleted_at){toast('This photo is no longer stored in Nocturnal Games');return}const signed=await db.storage.from('game-evidence').createSignedUrl(e.storage_path,600);if(signed.error){toast(signed.error.message);return}const recipient=e.recipient_entity_id===currentEntity()?.id;const d=directives.find(x=>x.id===e.directive_id);
-  document.body.insertAdjacentHTML('beforeend',`<div class="modal-back" id="photoModal"><div class="modal photo-view"><div class="eyebrow">${esc(d?.code||'EVIDENCE')}</div><h3>${esc(d?.title||'Photo Submission')}</h3><img src="${esc(signed.data.signedUrl)}" alt="Submitted evidence"><p>${esc(e.caption||'No caption')}</p><div class="photo-meta">${humanBytes(e.byte_size||0)} · ${fmtDate(e.created_at)} · ${esc(e.status)}</div><div class="row"><button class="secondary" onclick="document.getElementById('photoModal')?.remove()">Close</button>${counselAvailable()?`<button class="secondary" onclick="askCounselAboutEvidence('${esc(e.id)}')">Ask Counsel</button>`:''}${recipient?`<button class="secondary" onclick="saveEvidencePhoto('${esc(e.id)}')">Save Photo</button>`:''}${recipient&&accountRole()==='game_master'?`<button class="primary" onclick="reviewEvidence('${esc(e.id)}','approved')">Approve</button><button class="danger" onclick="reviewEvidence('${esc(e.id)}','rejected')">Reject</button>`:''}</div></div></div>`)
+  document.body.insertAdjacentHTML('beforeend',`<div class="modal-back" id="photoModal"><div class="modal photo-view"><div class="eyebrow">${esc(d?.code||'EVIDENCE')}</div><h3>${esc(d?.title||'Photo Submission')}</h3><img src="${esc(signed.data.signedUrl)}" alt="Submitted evidence"><p>${esc(e.caption||'No caption')}</p><div class="photo-meta">${humanBytes(e.byte_size||0)} · ${fmtDate(e.created_at)} · ${esc(e.status)}</div><div class="row"><button class="secondary" onclick="document.getElementById('photoModal')?.remove()">Close</button>${counselAvailable()?`<button class="secondary" onclick="askCounselAboutEvidence('${esc(e.id)}')">Ask Counsel</button>`:''}${recipient&&!previewReadOnly()?`<button class="secondary" onclick="saveEvidencePhoto('${esc(e.id)}')">Save Photo</button>`:''}${recipient&&!previewReadOnly()&&accountRole()==='game_master'?`<button class="primary" onclick="reviewEvidence('${esc(e.id)}','approved')">Approve</button><button class="danger" onclick="reviewEvidence('${esc(e.id)}','rejected')">Reject</button>`:''}</div></div></div>`)
 }
 window.saveEvidencePhoto=async id=>{
   const e=evidenceSubmissions.find(x=>x.id===id);if(!e)return;const dl=await db.storage.from('game-evidence').download(e.storage_path);if(dl.error){toast(dl.error.message);return}const file=new File([dl.data],e.original_name||'babybat-photo.jpg',{type:e.mime_type||dl.data.type||'image/jpeg'});try{if(navigator.canShare?.({files:[file]})){await navigator.share({files:[file],title:'Nocturnal Games Photo'});}else{const url=URL.createObjectURL(dl.data);const a=document.createElement('a');a.href=url;a.download=file.name;document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),5000)}}catch(err){if(err?.name==='AbortError')return;toast(err?.message||String(err));return}
@@ -1210,7 +1303,7 @@ window.reviewEvidence=async(id,status)=>{if(previewReadOnly())return previewOnly
 window.saveGameBasics=async()=>{const name=document.getElementById('setGameName')?.value.trim();const reward_interval=Number(document.getElementById('setRewardInterval')?.value);if(!name||!Number.isFinite(reward_interval)||reward_interval<1){toast('Enter a valid name and reward interval');return}const r=await db.from('games').update({name,reward_interval,updated_at:new Date().toISOString()}).eq('id',game.id);if(r.error){toast(r.error.message);return}await loadRemote({silent:true});toast('Game settings saved')}
 async function saveSettings(values){const payload=Object.entries(values).map(([setting_key,setting_value])=>({game_id:game.id,setting_key,setting_value,updated_by_user_id:session.user.id,updated_at:new Date().toISOString()}));const r=await db.from('app_settings').upsert(payload,{onConflict:'game_id,setting_key'});if(r.error)throw r.error}
 window.savePhotoSettings=async()=>{try{await saveSettings({photo_max_long_edge:Number(document.getElementById('setPhotoEdge')?.value)||1800,photo_quality:Number(document.getElementById('setPhotoQuality')?.value)||.82,photo_retention_days_after_save:Number(document.getElementById('setPhotoRetention')?.value)||14,photo_auto_delete_after_save:!!document.getElementById('setPhotoAutoDelete')?.checked});await loadRemote({silent:true});toast('Photo settings saved')}catch(e){toast(e.message)}}
-window.saveMailSettings=async()=>{try{await saveSettings({sovereign_mail_address:document.getElementById('setSovMail')?.value.trim()||'chambers@sovereigncircle.org',nocturne_mail_address:document.getElementById('setNocMail')?.value.trim()||'nocturnecollective@nightshift.net',mail_enabled:!!document.getElementById('setMailEnabled')?.checked});await loadRemote({silent:true});toast('Mail settings saved')}catch(e){toast(e.message)}}
+window.saveMailSettings=async()=>{try{const payload={nocturne_mail_address:document.getElementById('setNocMail')?.value.trim()||'nocturnecollective@nightshift.net',mail_enabled:!!document.getElementById('setMailEnabled')?.checked};if(isInfernalGame())payload.infernal_mail_address=document.getElementById('setInfMail')?.value.trim()||'infernalfirm@hellscape.net';else payload.sovereign_mail_address=document.getElementById('setSovMail')?.value.trim()||'chambers@sovereigncircle.org';await saveSettings(payload);await loadRemote({silent:true});toast('Mail settings saved')}catch(e){toast(e.message)}}
 window.saveCounselSettings=async()=>{try{await saveSettings({counsel_enabled:!!document.getElementById('setCounselEnabled')?.checked,counsel_model:document.getElementById('setCounselModel')?.value||'gpt-5.6-sol',counsel_reasoning_effort:document.getElementById('setCounselReasoning')?.value||'medium',sovereign_counsel_notes:document.getElementById('setSovCounselNotes')?.value||'',nocturne_counsel_notes:document.getElementById('setNocCounselNotes')?.value||''});await loadRemote({silent:true});toast('Counsel settings saved')}catch(e){toast(e.message)}}
 window.saveIntegrationSettings=async()=>{try{await saveSettings({push_enabled:!!document.getElementById('setPushEnabled')?.checked});await loadRemote({silent:true});toast('Integration switch saved')}catch(e){toast(e.message)}}
 window.saveScoringRules=async()=>{const inputs=[...document.querySelectorAll('.score-admin-input')];try{for(const i of inputs){const v=Number(i.value);if(!Number.isFinite(v)||v===0)throw new Error('Scoring values must be non-zero numbers.');const r=await db.from('scoring_rules').update({points:v,updated_at:new Date().toISOString()}).eq('id',i.dataset.scoreId);if(r.error)throw r.error}await loadRemote({silent:true});toast('Scoring values saved')}catch(e){toast(e.message)}}
@@ -1293,8 +1386,8 @@ window.postScoreBuilder=async()=>{
   if(accountRole()!=='game_master'){toast('Nocturne Game Master permission required');return}
   const raw=String(document.getElementById('scoreDirectiveNumber')?.value||'').trim();
   const n=Number(raw);
-  if(!Number.isInteger(n)||n<1||n>9999){toast('Enter a valid Directive number');return}
-  const code=`SD-${String(n).padStart(3,'0')}`;
+  if(!Number.isInteger(n)||n<1||n>9999){toast(`Enter a valid ${gameItemSingular()} number`);return}
+  const code=`${gameCodePrefix()}-${String(n).padStart(3,'0')}`;
   const directive=directives.find(d=>(normalizeDirectiveCode(d.code)||String(d.code).toUpperCase())===code);
   if(!directive){toast(`${code} is not in Nocturnal Games yet`);return}
   const selected=[...document.querySelectorAll('.score-rule-check:checked')].map(el=>({category:String(el.dataset.label||'').trim(),points:Number(el.dataset.points||0)})).filter(x=>x.category&&Number.isFinite(x.points));
@@ -1302,7 +1395,7 @@ window.postScoreBuilder=async()=>{
   const existing=existingLedgerSignatures();
   const fresh=selected.filter(x=>!existing.has(`${code}|${x.category.toLowerCase()}|${x.points}`));
   const duplicates=selected.length-fresh.length;
-  if(!fresh.length){toast('Those scoring items are already posted for this Directive');return}
+  if(!fresh.length){toast(`Those scoring items are already posted for this ${gameItemSingular()}`);return}
   if(duplicates&&!confirm(`${duplicates} selected scoring item${duplicates===1?' is':'s are'} already in ${code}. Skip ${duplicates===1?'it':'them'} and post the rest?`))return;
   const note=String(document.getElementById('scoreBuilderNote')?.value||'').trim();
   const totalPts=fresh.reduce((sum,x)=>sum+x.points,0);

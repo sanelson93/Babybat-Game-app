@@ -16,7 +16,7 @@
 --   private game-evidence Storage bucket + RLS
 --   babybat-counsel Supabase Edge Function (JWT required)
 --   babybat-ai-usage Supabase Edge Function (JWT required)
---   babybat-push Supabase Edge Function (JWT required)
+--   nocturnal-push Supabase Edge Function (JWT required)
 --   Legacy/internal bridge RPCs: babybat_snapshot(), babybat_send_mail(), babybat_set_status()
 --
 -- Counsel RLS:
@@ -35,11 +35,11 @@
 -- Edge Function secret named OPENAI_API_KEY.
 --
 -- Push delivery notes:
---   - notification_events retains legacy transport fields for migration safety; v3.2.2 uses push only.
---   - users manage push preferences through RLS; deprecated transport columns are not used by v3.2.2.
+--   - notification_events retains legacy transport fields for migration safety; v3.2.3 uses push only.
+--   - users manage push preferences through RLS; deprecated transport columns are not used by v3.2.3.
 --   - push endpoint/keys are registered through the authenticated Edge Function.
 --   - push_server_config is not readable by anon/authenticated clients; only the
---     public VAPID key is returned by babybat-push.
+--     public VAPID key is returned by nocturnal-push.
 --
 -- Earlier core tables remain in production:
 -- profiles, game_entities, games, game_memberships, directives, scoring_rules,
@@ -51,3 +51,16 @@
 --
 -- This file is documentation-only so a static Vercel deploy cannot accidentally
 -- create duplicate/outdated schema in the wrong Supabase project.
+
+-- v3.2.3 multi-game production notes:
+--   - Added infernal-firm-game as an independent game record with Nocturne as GM.
+--   - Shawn retains site-admin membership for maintenance/QA; Moxie is game_master.
+--   - Vex is attached only when he claims the dedicated one-time Infernal player code.
+--   - Infernal score baseline is 434 from the uploaded controlled master ledger;
+--     unresolved Request #1-#13 details remain summarized rather than fabricated.
+--   - Mail categories now include 'request' in addition to the existing 'directive'.
+--   - Push endpoint uniqueness is scoped to (user_id, game_id, endpoint), allowing
+--     one installed PWA/device subscription to participate in multiple games.
+--   - nocturnal-push v2 registers an enabled device across all current game memberships
+--     while each notification event remains game-scoped.
+--   - Infernal Counsel is disabled by default until a dedicated private Counsel model exists.

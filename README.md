@@ -1,49 +1,55 @@
-# Nocturnal Games v3.2.2
+# Nocturnal Games v3.2.3
 
-## Rebrand
-- App brand is now **Nocturnal Games**.
-- New full Nocturnal Games logo is used throughout the app.
-- The Home Screen/PWA icon uses the full Nocturnal Games logo.
-- Browser title, manifest metadata, login/recovery screens, app header, version label, Mail wording, push copy, and public policy pages use the new brand.
-- Sovereign Circle and Nocturne Collective keep their existing side-specific identity and styling inside the shared Nocturnal Games shell.
+## Multi-game foundation
+- Nocturnal Games now hosts two isolated live games:
+  - **Sovereign Circle Game** — Moxie / Nocturne Collective ↔ Shawn / Sovereign Circle.
+  - **Infernal Firm Game** — Moxie / Nocturne Collective ↔ Vex / The Infernal Firm.
+- Scores, Requests/Directives, rewards, rules, Mail, evidence, settings, rosters, and push events stay scoped to their own game.
+- The existing Sovereign game data and Counsel history are not merged into the Infernal game.
 
+## Moxie / Game Manager
+- Moxie gets a compact **GAME** selector for switching between Sovereign and Infernal without cluttering her normal interface.
+- The selected game controls the dashboard, score, ledger, submissions, roster, rules, and scoring console.
+- New Mail includes a **To** dropdown so Moxie can address either Shawn / Sovereign Circle or Vex / The Infernal Firm.
+- Cross-game Mail switches the working context to the destination game after sending, keeping Sent Mail and read receipts easy to follow.
+- Sovereign continues to use **Directives / SD-###**. Infernal uses **Requests / REQ-###**.
 
-## Per-account Counsel preference
-- Normal **Player** and **Game Manager** accounts can turn **In-App Counsel** on or off from their account area.
-- Turning it off removes the Counsel tab and Ask Counsel shortcuts for that account.
-- Existing private Counsel history is preserved and returns if the account turns Counsel back on.
-- The preference affects only that account; it does not disable the other player's Counsel.
-- Site Admin retains access in Admin mode for configuration and QA.
-- This is separate from the site-wide Counsel master switch.
+## Vex / The Infernal Firm
+- Full red-and-black Infernal Firm theme and uploaded organization/staff artwork are included.
+- Infernal roster includes Vex, Seraphine Morningstar, Piprix, Lucifer Morningstar, Vesper Morningstar, Malachar Morningstar, Mime, Grimm, and Mara Morningstar.
+- Master-ledger baseline is seeded without inventing missing history:
+  - established pre-#14 baseline: 372 points
+  - Request #14: +28
+  - Request #15: +30 with its established category breakdown
+  - Request #16: +4 Partial Compliance
+  - official total: **434**
+  - Reward II banked at 400; Reward III target 600 with 166 remaining
+- Unknown Request #1–#13 details and undisclosed Reward II contents remain unresolved rather than fabricated.
+- A one-time Infernal player access code can attach Vex's future account to the Infernal game; no email/account identity was guessed.
 
-## Notifications
-- Push notifications remain enabled and operational.
-- SMS/Twilio UI, public SMS page, Vercel SMS route, and Site Admin SMS controls have been removed.
-- Existing backend database columns are left intact for migration safety, but SMS is not exposed by this build.
+## Site Admin / QA
+- Admin has a game selector and read-only **Preview As Shawn / Moxie / Vex** controls.
+- Previewing Vex automatically opens the Infernal game and its red/black player experience.
+- Previewing Shawn automatically opens the Sovereign game.
+- Previewing Moxie uses whichever game is currently selected.
+- Preview mode does not impersonate or write as the previewed user.
+- Owner Control Center settings edit only the selected game.
+- Infernal Counsel is intentionally disabled until a dedicated Infernal Counsel personality/privacy model is defined; Sovereign + Nocturne Counsel remain unchanged in the Sovereign game.
 
-## Preserved from v3.1.8
-- iPhone keyboard-safe Counsel composer.
-- Private Sovereign / Nocturne Counsel.
-- OpenAI usage meter.
-- Mail, evidence, scoring, rewards, organizations, rules, auth, and admin features.
-- Push subscription controls and test push.
+## Push / Mail integrity
+- One installed Nocturnal Games PWA can now register the same push subscription across multiple game memberships.
+- Existing push-enabled accounts were carried into the new Infernal game.
+- Live Mail refresh and read receipts from v3.2.1/v3.2.2 are preserved.
+- SMS remains removed.
+
+## Preserved
+- Nocturnal Games silver/black/purple platform branding.
+- Sovereign green styling and Nocturne purple styling.
+- Optional per-account in-app Counsel setting.
+- AI usage meter.
+- Private photo evidence, scoring, reward chest, organizations, auth, realtime Mail, read receipts, and iPhone keyboard-safe Counsel composer.
 
 ## Deploy
-Upload the contents of this ZIP to the existing Vercel project. The package is flat-root deployment ready.
+Upload the **contents** of the ZIP to the existing Vercel project. The package is flat-root deployment ready.
 
-Because iOS caches installed PWA metadata and icons, remove the old Home Screen app and add it again after deploying if the old name/icon remains.
-
-## v3.2.1 — Live Mail refresh
-- Incoming Nocturnal Games Mail updates immediately through Supabase Realtime.
-- Adds an 8-second foreground Mail reconciliation fallback for iOS/PWA websocket misses.
-- Re-syncs Mail whenever the app returns to the foreground or regains focus.
-- Automatically reconnects the realtime channel after timeout/closure.
-- No Home Screen reinstall is required for this update.
-
-
-## v3.2.2 — Mail read receipts
-- Sent Mail now shows **Sent** until the recipient actually opens the message.
-- After the recipient opens it, the sender sees **Read** with the read timestamp.
-- Opened sent messages show a detailed receipt line with the recipient organization and timestamp.
-- Inbox previews do not mark Mail as read; opening the message is what sets the receipt.
-- Read-status changes arrive through the same Realtime + foreground reconciliation added in v3.2.1, so the sender does not need to close/reopen the app.
+This is a normal app update. A Home Screen reinstall should not be necessary unless iOS is showing stale PWA metadata/icon assets.
