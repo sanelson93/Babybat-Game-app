@@ -64,3 +64,15 @@
 --   - nocturnal-push v2 registers an enabled device across all current game memberships
 --     while each notification event remains game-scoped.
 --   - Infernal Counsel is disabled by default until a dedicated private Counsel model exists.
+
+-- v3.2.4 production notes:
+--   - organization_members can be viewed by any authenticated Nocturnal Games member.
+--   - Players/Game Managers may INSERT staff only into their own organization and only
+--     in games where that entity is actually the player or Game Master side.
+--   - public `org-roster` Storage bucket added for optional staff photos (5 MB max;
+--     JPEG/PNG/WebP; uploads restricted to the signed-in user's folder).
+--   - Infernal reward tiers normalized to a repeating 200-point progression:
+--     Reward I 200, Reward II 400, Reward III 600, Reward IV 800.
+--   - Infernal Reward I was backfilled at 200; Reward II remains unlocked at 400.
+--   - Moxie's client aggregates both game summaries and both Mail streams while keeping
+--     the underlying game records isolated.

@@ -1,4 +1,4 @@
-const APP_VERSION = '3.2.3';
+const APP_VERSION = '3.2.4';
 const UI_STORAGE = 'babybat-game-hub-ui-v312';
 const CONFIG = window.BABYBAT_CONFIG;
 const { createClient } = window.supabase;
@@ -117,6 +117,9 @@ let scoringRules = [];
 let ruleSections = [];
 let appSettings = [];
 let mailMessages = [];
+let allMailMessages = [];
+let multiGameData = new Map();
+let allOrganizationMembers = [];
 let evidenceSubmissions = [];
 let notificationEvents = [];
 let notificationPreference = null;
@@ -306,17 +309,18 @@ function gameLabel(g=game){
 function availableGameRows(){
   if(ui.demo) return [];
   const ids=new Set(memberships.map(m=>m.game_id));
-  return games.filter(g=>ids.has(g.id)).sort((a,b)=>gameLabel(a).localeCompare(gameLabel(b)));
+  const rank=g=>g.slug===CONFIG.gameSlug?0:g.slug==='infernal-firm-game'?1:2;
+  return games.filter(g=>ids.has(g.id)).sort((a,b)=>rank(a)-rank(b)||gameLabel(a).localeCompare(gameLabel(b)));
 }
 function gameContextSwitcher(){
   const rows=availableGameRows();
-  const show=!ui.demo&&rows.length>1&&((accountRole()==='game_master')||(isAdminAccount()&&ui.siteMode==='admin'));
+  const show=!ui.demo&&rows.length>1&&isAdminAccount()&&ui.siteMode==='admin'&&ui.adminPreview==='none';
   if(!show) return '';
-  return `<div class="game-context-switch"><span>GAME</span><select onchange="setActiveGame(this.value)">${rows.map(g=>`<option value="${esc(g.slug)}" ${g.id===game?.id?'selected':''}>${esc(gameLabel(g))}</option>`).join('')}</select><small>${esc(isInfernalGame()?'Requests · Vex':'Directives · Shawn')}</small></div>`;
+  return `<div class="game-context-switch"><span>GAME</span><select onchange="setActiveGame(this.value)">${rows.map(g=>`<option value="${esc(g.slug)}" ${g.id===game?.id?'selected':''}>${esc(gameLabel(g))}</option>`).join('')}</select><small>Site Admin context</small></div>`;
 }
 function unreadMailCount(){
   const me=currentEntity()?.id;if(!me)return 0;
-  return mailMessages.filter(m=>m.recipient_entity_id===me&&!m.recipient_read_at&&!m.recipient_archived_at).length;
+  return visibleMailMessages().filter(m=>m.recipient_entity_id===me&&!m.recipient_read_at&&!m.recipient_archived_at).length;
 }
 function storageBytes(){return evidenceSubmissions.filter(e=>!e.deleted_at).reduce((a,e)=>a+Number(e.byte_size||0),0)}
 function humanBytes(n=0){const x=Number(n)||0;if(x<1024)return `${x} B`;if(x<1048576)return `${(x/1024).toFixed(1)} KB`;if(x<1073741824)return `${(x/1048576).toFixed(1)} MB`;return `${(x/1073741824).toFixed(2)} GB`;}
@@ -341,7 +345,7 @@ function header(){
   return `<header class="topbar theme-${viewTheme()}"><div class="brand">${appLogo('header-logo')}<div><div class="eyebrow">Nocturnal Games · ${live}</div><h1>${consoleName}</h1></div></div><div class="role-pill">${esc(personLabel())} · ${roleLabel()}</div></header>`;
 }
 function nav(){
-  const lastLabel=effectiveRole()==='game_master'?'Score':(isAdminAccount()&&ui.siteMode==='player'?'Profile':'Admin');
+  const lastLabel=isAdminAccount()&&ui.siteMode==='admin'&&ui.adminPreview==='none'?'Admin':'Profile';
   const unread=unreadMailCount();
   const items=[['home','Home']];
   if(counselAvailable()) items.push(['counsel','Counsel']);
@@ -375,6 +379,48 @@ function rewardRows(){
   const tmap=new Map(tiers.map(t=>[t.id,t]));
   return rewards.map(r=>({...r,tier:tmap.get(r.tier_id)?.name||'Reward',game:game?.name||gameLabel()}));
 }
+function isMoxieView(){ return effectiveRole()==='game_master' && currentEntity()?.slug==='nocturne-collective'; }
+function visibleMailMessages(){ return isMoxieView() ? allMailMessages : mailMessages; }
+function roman(n){const r=['','I','II','III','IV','V','VI','VII','VIII','IX','X'];return r[n]||String(n)}
+function gameDataFor(g){
+  if(!g) return {points:[],rewards:[],tiers:[]};
+  if(multiGameData.has(g.id)) return multiGameData.get(g.id);
+  if(g.id===game?.id) return {points:pointTransactions,rewards,tiers};
+  return {points:[],rewards:[],tiers:[]};
+}
+function gameTotal(g){return gameDataFor(g).points.reduce((sum,x)=>sum+Number(x.points||0),0)}
+function gameProgress(g){
+  const t=gameTotal(g), interval=Number(g?.reward_interval||200), floor=Math.floor(Math.max(t,0)/interval)*interval, next=floor+interval;
+  return {t,floor,next,within:t-floor,left:next-t,pct:Math.min(100,Math.max(0,((t-floor)/interval)*100)),index:Math.floor(next/interval)};
+}
+function rewardsForGame(g){
+  const data=gameDataFor(g), tmap=new Map(data.tiers.map(t=>[t.id,t]));
+  return data.rewards.map(r=>({...r,tier:tmap.get(r.tier_id)?.name||`Reward ${roman(Math.max(1,Math.floor(Number(r.milestone||0)/Number(g?.reward_interval||200))))}`}));
+}
+function rewardMilestoneLabel(g,milestone){
+  const data=gameDataFor(g), interval=Number(g?.reward_interval||200), idx=Math.max(1,Math.floor(Number(milestone||interval)/interval)), cycle=((idx-1)%4)+1;
+  const tier=data.tiers.find(t=>Number(t.cycle_order)===cycle);
+  const generic=`Reward ${roman(idx)}`;
+  if(!tier?.name) return generic;
+  return /^reward\s+/i.test(tier.name)?generic:`${generic} · ${tier.name}`;
+}
+function moxieGameSummary(g){
+  const p=gameProgress(g), rows=rewardsForGame(g).sort((a,b)=>Number(a.milestone)-Number(b.milestone));
+  const player=entityRows().find(e=>e.id===g.player_entity_id);
+  const theme=player?.slug==='infernal-firm'?'infernal':'sovereign';
+  const unlocked=rows.filter(r=>Number(r.milestone)<=p.t);
+  const rewardLine=unlocked.length?unlocked.map(r=>`<div class="moxie-reward-row"><span><b>${esc(rewardMilestoneLabel(g,r.milestone))}</b><small>${Number(r.milestone)} points</small></span><span class="badge ${r.status==='used'?'used':'available'}">${r.status==='used'?'USED':'UNLOCKED'}</span>${r.status==='available'&&!previewReadOnly()?`<button class="use-btn" onclick="askRedeemGame('${esc(g.id)}','${esc(r.id)}')">Use</button>`:''}</div>`).join(''):`<div class="moxie-reward-row locked"><span><b>${esc(rewardMilestoneLabel(g,p.next))}</b><small>${p.left} points remaining</small></span><span class="badge">LOCKED</span></div>`;
+  const nextUnlocked=rows.some(r=>Number(r.milestone)===p.next);
+  const nextLine=unlocked.length&&!nextUnlocked?`<div class="moxie-reward-row locked"><span><b>${esc(rewardMilestoneLabel(g,p.next))}</b><small>${p.left} points remaining</small></span><span class="badge">NEXT</span></div>`:'';
+  const noun=g.slug==='infernal-firm-game'?'Request':'Directive';
+  const issue=!previewReadOnly()?`<button class="secondary compact moxie-issue-btn" onclick="openIssueGameItem('${esc(g.id)}')">Issue ${noun}</button>`:'';
+  return `<section class="card moxie-game-summary"><div class="moxie-game-head"><div><span class="eyebrow">${esc(player?.name||gameLabel(g))}</span><h3>${p.t} points</h3></div><span class="moxie-game-status ${theme}">${p.left} TO ${p.next}</span></div><div class="moxie-progress ${theme}"><i style="width:${p.pct}%"></i></div><div class="moxie-progress-scale"><span>${p.floor}</span><span>${p.next}</span></div><div class="moxie-rewards">${rewardLine}${nextLine}</div>${issue}</section>`;
+}
+function moxieHome(){
+  const rows=availableGameRows();
+  const cards=rows.map(moxieGameSummary).join('');
+  return `<main class="page moxie-home"><section class="hero hero-nocturne moxie-command-hero"><div class="hero-brand"><img src="nocturne-collective-logo.webp" alt="Nocturne Collective logo"><div><span>GAME MASTER COMMAND</span><h2>Nocturne Collective</h2><p>Both games · one command screen</p></div></div></section><section class="section"><div class="section-head"><h2>Game Progress</h2><span>${rows.length} active games</span></div><div class="moxie-game-grid">${cards}</div></section><section class="section"><div class="section-head"><h2>Quick Control</h2><span>no game switch required</span></div><div class="quick-actions"><button class="action-tile" onclick="go('mail')"><b>Nocturnal Games Mail</b><span>Choose Shawn or Vex in the To line</span></button><button class="action-tile" onclick="go('ledger')"><b>Ledger & Scoring</b><span>Score either game from one ledger tab</span></button><button class="action-tile" onclick="go('org')"><b>Organizations</b><span>View every roster and manage Nocturne staff</span></button></div></section></main>`;
+}
 
 function dashboardHero(p){
   const gm=effectiveRole()==='game_master';
@@ -388,27 +434,26 @@ function dashboardHero(p){
 function home(){
   const p=progress(), rr=rewardRows(), available=rr.filter(r=>r.status==='available'), led=ledgerItems();
   if(effectiveRole()==='admin') return adminHome(p,available,led);
-  const moxie=effectiveRole()==='game_master';
+  if(isMoxieView()) return moxieHome();
   return `<main class="page">${dashboardHero(p)}
   <section class="section presence-section"><div class="section-head"><h2>Game Status</h2><span>${esc(gameLabel())}</span></div>${organizationPresence()}</section>
   ${gameDesk()}
   <section class="section"><div class="grid2"><div class="mini"><strong>${led.length}</strong><span>Scored ${esc(gameItemPlural().toLowerCase())}</span></div><div class="mini"><strong>${available.length}</strong><span>Rewards ready</span></div></div></section>
-  ${moxie?`<section class="section"><div class="section-head"><h2>Game Master</h2><span>${esc(gameLabel())}</span></div><div class="gm-next-step"><div><span class="eyebrow">NEXT ACTION</span><h3>Score a ${esc(gameItemSingular())}</h3><p>Enter the ${esc(gameItemSingular())} number, tap the scoring awards that apply, and post the ledger.</p></div><button class="primary" onclick="go('admin')">Build Ledger</button></div><button class="ledger-link" onclick="go('ledger')"><span>Review scoring history</span><b>View Ledger ›</b></button></section>`:''}
-  <section class="section"><div class="section-head"><h2>Reward Chest</h2><span>${available.length} available</span></div>${rewardChest(available,p,moxie)}</section>
-  <section class="section"><div class="section-head"><h2>Organizations</h2><span>${esc(gameLabel())}</span></div>${organizationTeasers()}</section>
+  <section class="section"><div class="section-head"><h2>Reward Chest</h2><span>${available.length} available</span></div>${rewardChest(available,p,false)}</section>
+  <section class="section"><div class="section-head"><h2>Organizations</h2><span>all organizations</span></div>${organizationTeasers()}</section>
   <section class="section"><div class="section-head"><h2>Recent Activity</h2><span>Permanent ledger</span></div>${led.slice().reverse().slice(0,4).map(activity).join('')}</section></main>`;
 }
 function adminHome(p,available,led){
   const counselTile=counselAvailable()?`<button class="action-tile" onclick="go('counsel')"><b>${esc(counselName())}</b><span>Private AI strategy room</span></button>`:'';
   return `<main class="page"><section class="admin-command"><div><span class="eyebrow">Site Administration</span><h2>Nocturnal Games Control Room</h2><p>Each game stays isolated. Use the game selector above, then preview the exact player or Game Manager experience.</p></div><div class="admin-crown">♛</div></section>
-  <section class="section"><div class="section-head"><h2>Preview As</h2><span>read-only QA</span></div><div class="preview-grid"><button class="preview-card sovereign" onclick="setAdminPreview('shawn')"><img src="sovereign-circle-logo.webp"><div><b>Shawn</b><span>Sovereign player view</span></div></button><button class="preview-card nocturne" onclick="setAdminPreview('moxie')"><img src="nocturne-collective-logo.webp"><div><b>Moxie</b><span>Game Manager · selected game</span></div></button><button class="preview-card infernal" onclick="setAdminPreview('vex')"><img src="infernal-firm-logo.webp"><div><b>Vex</b><span>Infernal player view</span></div></button><button class="preview-card admin" onclick="setAdminPreview('none')"><div class="preview-admin-mark">♛</div><div><b>Admin</b><span>Return to control room</span></div></button></div></section>
+  <section class="section"><div class="section-head"><h2>Preview As</h2><span>read-only QA</span></div><div class="preview-grid"><button class="preview-card sovereign" onclick="setAdminPreview('shawn')"><img src="sovereign-circle-logo.webp"><div><b>Shawn</b><span>Sovereign player view</span></div></button><button class="preview-card nocturne" onclick="setAdminPreview('moxie')"><img src="nocturne-collective-logo.webp"><div><b>Moxie</b><span>Game Manager · both games</span></div></button><button class="preview-card infernal" onclick="setAdminPreview('vex')"><img src="infernal-firm-logo.webp"><div><b>Vex</b><span>Infernal player view</span></div></button><button class="preview-card admin" onclick="setAdminPreview('none')"><div class="preview-admin-mark">♛</div><div><b>Admin</b><span>Return to control room</span></div></button></div></section>
   <section class="section"><div class="section-head"><h2>Organization Status</h2><span>${esc(gameLabel())}</span></div>${organizationPresence()}</section>
   <section class="section"><div class="section-head"><h2>Live Game</h2><span>${p.t} lifetime points · ${esc(gameLabel())}</span></div><div class="card admin-score"><div><strong>${p.left}</strong><span>points to ${esc(p.tier)}</span></div><div><strong>${available.length}</strong><span>rewards ready</span></div><div><strong>${led.length}</strong><span>scored ${esc(gameItemPlural().toLowerCase())}</span></div></div></section>
   <section class="section"><div class="section-head"><h2>Quick Control</h2><span>${esc(gameLabel())}</span></div><div class="quick-actions"><button class="action-tile" onclick="go('admin')"><b>Control Center</b><span>Settings / scoring / storage</span></button>${counselTile}<button class="action-tile" onclick="go('mail')"><b>Nocturnal Games Mail</b><span>Official game correspondence</span></button><button class="action-tile" onclick="go('org')"><b>Organizations</b><span>Review active-game rosters</span></button></div></section></main>`;
 }
 function rewardChest(av,p,moxie=false){if(!av.length)return `<div class="empty">No unlocked rewards in the chest yet.<br><br><strong style="color:#d8dce2">Next:</strong> ${esc(p.tier)} at ${p.next} points.</div>`;return av.map(r=>`<div class="card reward-card"><div class="reward-icon">${r.tier==='Sovereign'?'♛':'◆'}</div><div class="reward-main"><h3>${esc(r.tier)} Reward</h3><p>Unlocked at ${r.milestone} · ${esc(r.game)}</p></div><span class="badge available">Available</span>${canRedeemView()?`<button class="use-btn" ${previewReadOnly()?'disabled':''} onclick="${previewReadOnly()?'previewOnly()':`askRedeem('${r.id}')`}">${moxie?`USE ${playerName().toUpperCase()}'S`:'USE'}</button>`:''}</div>`).join('')}
 function organizationTeasers(){
-  const data=gameEntities();
+  const data=entityRows().filter(e=>e.is_active!==false);
   return `<div class="org-teasers">${data.map(e=>`<button class="org-teaser ${esc(e.theme_key||'')}" onclick="openOrganization('${e.slug}')"><img src="${esc(assetUrl(e.logo_path||''))}" alt=""><div><b>${esc(e.name)}</b><span>${memberRows().filter(m=>m.entity_slug===e.slug||m.entity_id===e.id).length} members</span></div><span class="chev">›</span></button>`).join('')}</div>`;
 }
 function activity(x){const sign=x.total>=0?'+':'';return `<div class="card activity"><div class="dot"></div><div class="copy"><h4>${esc(x.directive)}</h4><p>${esc(x.reason||x.title)}</p></div><div class="amount ${x.total<0?'negative':''}">${sign}${x.total}</div></div>`}
@@ -441,12 +486,13 @@ function submissionReviewCard(e){
 function mailRows(){
   if(ui.demo) return [];
   const me=currentEntity()?.id;if(!me)return [];
-  return mailMessages.filter(m=>mailMode==='sent'?m.sender_entity_id===me&&!m.sender_archived_at:m.recipient_entity_id===me&&!m.recipient_archived_at).slice().sort((a,b)=>String(b.created_at).localeCompare(String(a.created_at)));
+  return visibleMailMessages().filter(m=>mailMode==='sent'?m.sender_entity_id===me&&!m.sender_archived_at:m.recipient_entity_id===me&&!m.recipient_archived_at).slice().sort((a,b)=>String(b.created_at).localeCompare(String(a.created_at)));
 }
 function mailPage(){
   if(setting('mail_enabled',true)===false) return `<main class="page"><section class="section"><div class="empty">Nocturnal Games Mail is disabled by Site Admin.</div></section></main>`;
-  const rows=mailRows(), other=otherGameEntity();
-  return `<main class="page"><section class="mail-hero ${viewTheme()}"><div><span class="eyebrow">Official Game Channel</span><h2>Nocturnal Games Mail</h2><p>${esc(mailAddressForEntity(currentEntity()?.id))}</p></div><button class="primary" ${previewReadOnly()?'disabled':''} onclick="${previewReadOnly()?'previewOnly()':'openComposeMail()'}">New Mail</button></section><section class="section"><div class="mail-tabs"><button class="${mailMode==='inbox'?'active':''}" onclick="setMailMode('inbox')">Inbox <span>${unreadMailCount()}</span></button><button class="${mailMode==='sent'?'active':''}" onclick="setMailMode('sent')">Sent</button></div>${rows.length?`<div class="mail-list">${rows.map(mailCard).join('')}</div>`:`<div class="empty">${mailMode==='sent'?'Nothing sent yet.':'Inbox zero. No game mail waiting.'}</div>`}<div class="mail-route-note">Active game: ${esc(gameLabel())} · ${esc(currentEntity()?.name||'—')} ↔ ${esc(other?.name||'—')}</div></section></main>`;
+  const rows=mailRows();
+  const route=isMoxieView()?'One inbox · Shawn + Vex':`${esc(currentEntity()?.name||'—')} ↔ ${esc(otherGameEntity()?.name||'—')}`;
+  return `<main class="page"><section class="mail-hero ${viewTheme()}"><div><span class="eyebrow">Official Game Channel</span><h2>Nocturnal Games Mail</h2><p>${esc(mailAddressForEntity(currentEntity()?.id))}</p></div><button class="primary" ${previewReadOnly()?'disabled':''} onclick="${previewReadOnly()?'previewOnly()':'openComposeMail()'}">New Mail</button></section><section class="section"><div class="mail-tabs"><button class="${mailMode==='inbox'?'active':''}" onclick="setMailMode('inbox')">Inbox <span>${unreadMailCount()}</span></button><button class="${mailMode==='sent'?'active':''}" onclick="setMailMode('sent')">Sent</button></div>${rows.length?`<div class="mail-list">${rows.map(mailCard).join('')}</div>`:`<div class="empty">${mailMode==='sent'?'Nothing sent yet.':'Inbox zero. No game mail waiting.'}</div>`}<div class="mail-route-note">${route}</div></section></main>`;
 }
 function mailCard(m){
   const incoming=m.recipient_entity_id===currentEntity()?.id;
@@ -533,22 +579,49 @@ function organizationPresence(){
   const data=gameEntities();
   return `<div class="presence-grid">${data.map(e=>{const slug=e.slug;const st=organizationStatusFor(slug);return `<div class="presence-card ${esc(e.theme_key||'')} ${st}"><div><span class="presence-dot"></span><div><b>${esc(e.name)}</b><small>${st==='open'?'Open for game activity':'Currently closed'}</small></div></div>${canControlOrgStatus(slug)?`<button onclick="toggleOrganizationStatus('${esc(slug)}')">${st==='open'?'Close':'Open'}</button>`:`<strong>${st.toUpperCase()}</strong>`}</div>`}).join('')}</div>`;
 }
-function memberRows(){ return ui.demo ? DEMO.members : organizationMembers.map(m=>({...m,entity_slug:entityRows().find(e=>e.id===m.entity_id)?.slug})); }
+function memberRows(){
+  if(ui.demo) return DEMO.members;
+  const source=(allOrganizationMembers.length?allOrganizationMembers:organizationMembers).map(m=>({...m,entity_slug:entityRows().find(e=>e.id===m.entity_id)?.slug}));
+  const preferred=source.slice().sort((a,b)=>Number(b.game_id===game?.id)-Number(a.game_id===game?.id));
+  const seen=new Set();
+  return preferred.filter(m=>{const k=`${m.entity_id}|${String(m.name||'').trim().toLowerCase()}|${String(m.position_title||'').trim().toLowerCase()}`;if(seen.has(k))return false;seen.add(k);return true});
+}
+function ownOrganizationEntityIds(){
+  if(ui.demo||previewReadOnly()) return new Set();
+  const ids=new Set();
+  for(const m of memberships){
+    const g=games.find(x=>x.id===m.game_id);
+    if(!g||!m.entity_id) continue;
+    if((g.player_entity_id===m.entity_id||g.game_master_entity_id===m.entity_id) && (m.role==='player'||m.role==='game_master'||(isAdminAccount()&&ui.siteMode==='player'))) ids.add(m.entity_id);
+  }
+  return ids;
+}
+function canAddStaffTo(entity){return !!entity&&!ui.demo&&!previewReadOnly()&&ownOrganizationEntityIds().has(entity.id)}
 function organizationsPage(){
-  const all=ui.demo?entityRows():gameEntities();
+  const all=entityRows().filter(e=>e.is_active!==false).sort((a,b)=>String(a.name).localeCompare(String(b.name)));
   const selected=all.find(e=>e.slug===ui.orgSlug)||all[0]||DEMO.entities[0];
   if(!selected) return `<main class="page"><div class="empty">No organizations configured.</div></main>`;
   const members=memberRows().filter(m=>(m.entity_slug===selected.slug)||(m.entity_id===selected.id)).sort((a,b)=>Number(a.sort_order)-Number(b.sort_order));
   const theme=selected.theme_key||'sovereign';
-  return `<main class="page"><section class="section" style="margin-top:4px"><div class="section-head"><h2>Organizations</h2><span>${all.length} realms</span></div><div class="field org-select"><label>Organization</label><select class="input" onchange="setOrganization(this.value)">${all.map(e=>`<option value="${esc(e.slug)}" ${e.slug===selected.slug?'selected':''}>${esc(e.name)}</option>`).join('')}</select></div></section>
-  <section class="org-banner org-${esc(theme)}">${selected.logo_path?`<img src="${esc(assetUrl(selected.logo_path))}" alt="${esc(selected.name)} logo">`:`<div class="org-placeholder">♜</div>`}<div><span class="eyebrow">${esc(selected.entity_type||'organization')}</span><h2>${esc(selected.name)}</h2><p>${esc(selected.tagline||'')}</p></div></section>
-  <section class="section"><div class="section-head"><h2>Roster</h2><span>${members.length} members</span></div>${members.length?`<div class="member-grid">${members.map(memberCard).join('')}</div>`:`<div class="empty">This organization is reserved for future expansion. No roster has been published yet.</div>`}</section></main>`;
+  const addButton=canAddStaffTo(selected)?`<button class="primary compact" onclick="openAddStaff('${esc(selected.slug)}')">+ Add Staff</button>`:'';
+  return `<main class="page"><section class="section" style="margin-top:4px"><div class="section-head"><h2>Organizations</h2><span>${all.length} organizations</span></div><div class="field org-select"><label>Organization</label><select class="input" onchange="setOrganization(this.value)">${all.map(e=>`<option value="${esc(e.slug)}" ${e.slug===selected.slug?'selected':''}>${esc(e.name)}</option>`).join('')}</select></div></section>
+  <section class="org-banner org-${esc(theme)}">${selected.logo_path?`<img src="${esc(assetUrl(selected.logo_path))}" alt="${esc(selected.name)} logo">`:`<div class="org-placeholder">♜</div>`}<div><span class="eyebrow">${esc(selected.entity_type||'organization')}</span><h2>${esc(selected.name)}</h2><p>${esc(selected.tagline||'')}</p></div>${addButton}</section>
+  <section class="section"><div class="section-head"><h2>Roster</h2><span>${members.length} members</span></div>${members.length?`<div class="member-grid">${members.map(memberCard).join('')}</div>`:`<div class="empty">No staff have been published yet.${canAddStaffTo(selected)?'<br><br>Use Add Staff to create the first roster entry.':''}</div>`}</section></main>`;
 }
 function memberCard(m){
   const image=m.image_path?`<img src="${esc(assetUrl(m.image_path))}" alt="${esc(m.name)}" loading="lazy" onerror="this.onerror=null;this.style.display='none';this.parentElement.classList.add('image-failed')">`:`<div class="member-placeholder">${esc(m.name.slice(0,1))}</div>`;
   return `<button class="member-card" onclick="openMember('${esc(m.id)}')"><div class="member-photo">${image}</div><div class="member-copy"><h3>${esc(m.name)}</h3><strong>${esc(m.position_title)}</strong>${m.role_name?`<span>${esc(m.role_name)}</span>`:''}</div></button>`;
 }
-function ledgerPage(){const led=ledgerItems(), rr=rewardRows();return `<main class="page"><section class="section" style="margin-top:4px"><div class="section-head"><h2>Game Ledger</h2><span>${total()} lifetime points</span></div>${led.slice().reverse().map(x=>{const sign=x.total>=0?'+':'';return `<details class="card rule"><summary><span>${esc(x.directive)} · ${sign}${x.total}</span></summary><div class="rule-body"><p>${esc(x.reason||'')}</p>${x.breakdown.map(([n,v])=>`<div class="score-row" style="margin-top:8px"><span>${esc(n)}</span><strong class="points ${v<0?'negative':''}">${v>0?'+':''}${v}</strong></div>`).join('')}<div class="divider"></div><div class="score-row"><strong>Total</strong><strong class="points ${x.total<0?'negative':''}">${sign}${x.total}</strong></div></div></details>`}).join('')}</section><section class="section"><div class="section-head"><h2>Redeemed Rewards</h2><span>never deleted</span></div>${redeemedArchive(rr)}</section></main>`}
+function ledgerGameTabs(){
+  if(!isMoxieView()) return '';
+  const rows=availableGameRows();
+  return `<div class="ledger-game-tabs">${rows.map(g=>`<button class="${g.id===game?.id?'active':''} ${entitySlug(g.player_entity_id)==='infernal-firm'?'infernal':'sovereign'}" onclick="setLedgerGame('${esc(g.slug)}')">${esc(entitySlug(g.player_entity_id)==='infernal-firm'?'Infernal Firm':'Sovereign Circle')}</button>`).join('')}</div>`;
+}
+function ledgerPage(){
+  const led=ledgerItems(), rr=rewardRows(), moxie=isMoxieView();
+  const scoring=moxie?`<section class="section ledger-scoring"><div class="section-head"><h2>Score ${esc(gameItemPlural())}</h2><span>${esc(gameLabel())}</span></div>${scoreBuilderForm()}</section>`:'';
+  return `<main class="page"><section class="section" style="margin-top:4px"><div class="section-head"><h2>Game Ledger</h2><span>${total()} lifetime points</span></div>${ledgerGameTabs()}${moxie?`<div class="notice">This is the only scoring workspace. Pick the game above, build the score, and post it here.</div>`:''}</section>${scoring}<section class="section"><div class="section-head"><h2>${esc(gameLabel())} History</h2><span>${led.length} scored</span></div>${led.length?led.slice().reverse().map(x=>{const sign=x.total>=0?'+':'';return `<details class="card rule"><summary><span>${esc(x.directive)} · ${sign}${x.total}</span></summary><div class="rule-body"><p>${esc(x.reason||'')}</p>${x.breakdown.map(([n,v])=>`<div class="score-row" style="margin-top:8px"><span>${esc(n)}</span><strong class="points ${v<0?'negative':''}">${v>0?'+':''}${v}</strong></div>`).join('')}<div class="divider"></div><div class="score-row"><strong>Total</strong><strong class="points ${x.total<0?'negative':''}">${sign}${x.total}</strong></div></div></details>`}).join(''):`<div class="empty">No scoring history yet.</div>`}</section><section class="section"><div class="section-head"><h2>Redeemed Rewards</h2><span>never deleted</span></div>${redeemedArchive(rr)}</section></main>`;
+}
 function redeemedArchive(rr=rewardRows()){const xs=rr.filter(r=>r.status==='used');if(!xs.length)return `<div class="empty">No rewards have been redeemed.</div>`;return xs.map(r=>`<div class="card reward-card"><div class="reward-icon">✓</div><div class="reward-main"><h3>${esc(r.tier)} Reward</h3><p>${r.milestone} pts · used ${fmtDate(r.used_at)}</p></div><span class="badge used">Used</span></div>`).join('')}
 
 function isStandalonePwa(){return window.matchMedia?.('(display-mode: standalone)')?.matches===true || window.navigator.standalone===true}
@@ -569,7 +642,7 @@ function notificationSettingsCard(){
   </div></section>`;
 }
 function counselPreferenceCard(){
-  if(ui.demo||previewReadOnly()||effectiveRole()==='admin') return '';
+  if(ui.demo||previewReadOnly()||effectiveRole()==='admin'||setting('counsel_enabled',true)===false) return '';
   const enabled=notificationPreference?.counsel_enabled!==false;
   const who=effectiveRole()==='game_master'?'Game Manager':'Player';
   return `<section class="section counsel-preference-section"><div class="section-head"><h2>Counsel</h2><span>optional</span></div><div class="card counsel-preference-card"><div class="notification-title"><div><span class="eyebrow">${who.toUpperCase()} ACCOUNT</span><h3>In-App Counsel</h3></div><b class="notification-state ${enabled?'ok':'pending'}">${enabled?'ON':'OFF'}</b></div><p class="small-note">Use Nocturnal Games' private built-in Counsel, or turn it off if you prefer to keep your strategy in ChatGPT. This changes only your account. It does not affect the other player's Counsel and it does not delete your existing private history.</p><div class="row notification-actions">${enabled?`<button class="secondary" onclick="setPersonalCounselEnabled(false)">Turn Off In-App Counsel</button>`:`<button class="primary" onclick="setPersonalCounselEnabled(true)">Turn On In-App Counsel</button>`}</div></div></section>`;
@@ -612,14 +685,22 @@ window.testPushNotification=async()=>{if(pushBusy)return;pushBusy=true;render();
 async function dispatchPushForSource(source_table,source_id,game_id=game?.id){try{await invokePush({action:'dispatch-source',source_table,source_id,game_id})}catch(e){console.warn('Nocturnal Games push dispatch skipped',e)}}
 async function sendGamePush({recipient_entity_id,event_type,title,body,source_table=null,source_id=null,game_id=game?.id}){try{return await invokePush({action:'notify',recipient_entity_id,event_type,title,body,source_table,source_id,game_id})}catch(e){console.warn('Nocturnal Games push notification skipped',e);return null}}
 
+function playerProfilePage(preview=false){
+  const e=currentEntity();const name=e?.slug==='infernal-firm'?'Vex':(profile?.display_name||'Shawn');
+  return `<main class="page"><section class="section" style="margin-top:4px"><div class="section-head"><h2>Player Profile</h2><span>${esc(e?.name||'Player')}</span></div>${preview?`<div class="preview-context"><span>${esc(name)} layout preview · read-only</span><button onclick="setAdminPreview('none')">Back to Admin Home</button></div>`:''}<div class="card player-profile-card"><div class="eyebrow">${esc((e?.name||'PLAYER').toUpperCase())}</div><h3>${esc(name)}</h3><p class="small-note">Your game activity, rewards, Mail, Ledger, and organization roster stay tied to this player account.</p></div></section>${preview?`<section class="section"><div class="card"><div class="eyebrow">ADMIN PREVIEW</div><h3>${esc(name)} · read-only</h3><p class="small-note">Preview cannot send Mail, mark Mail as read, submit evidence, redeem rewards, add staff, or change settings.</p></div></section>`:`<section class="section account-section"><div class="section-head"><h2>Account</h2><span>live sync</span></div><div class="card account-card"><p class="small-note">${esc(session?.user?.email||'')}<br>Player · Supabase connected</p><div class="row"><button class="secondary" onclick="syncNow()">Sync</button><button class="danger" onclick="signOut()">Sign Out</button></div><button class="account-reset" onclick="emailPasswordReset()">Email Password Reset</button></div></section>${counselPreferenceCard()}${notificationSettingsCard()}`}</main>`;
+}
+function managerProfilePage(preview=false){
+  const rows=availableGameRows();
+  return `<main class="page"><section class="section" style="margin-top:4px"><div class="section-head"><h2>Game Manager Profile</h2><span>Nocturne Collective</span></div>${preview?`<div class="preview-context"><span>Moxie layout preview · both games</span><button onclick="setAdminPreview('none')">Back to Admin Home</button></div>`:''}<div class="card player-profile-card"><div class="eyebrow">NOCTURNE GAME MASTER</div><h3>Moxie</h3><p class="small-note">Both active games are managed from the same Nocturne interface. Scoring lives only in the Ledger tab; Mail chooses Shawn or Vex from the To line.</p><div class="grid2">${rows.map(g=>`<div class="mini"><strong>${gameTotal(g)}</strong><span>${esc(gameLabel(g))} points</span></div>`).join('')}</div></div></section>${preview?`<section class="section"><div class="card"><div class="eyebrow">ADMIN PREVIEW</div><h3>Moxie · read-only</h3><p class="small-note">Preview cannot send Mail, score, redeem rewards, add staff, or change account settings.</p></div></section>`:`<section class="section account-section"><div class="section-head"><h2>Account</h2><span>live sync</span></div><div class="card account-card"><p class="small-note">${esc(session?.user?.email||'')}<br>Game Master · Supabase connected</p><div class="row"><button class="secondary" onclick="syncNow()">Sync</button><button class="danger" onclick="signOut()">Sign Out</button></div><button class="account-reset" onclick="emailPasswordReset()">Email Password Reset</button></div></section>${counselPreferenceCard()}${notificationSettingsCard()}`}</main>`;
+}
 function admin(){
   const r=effectiveRole(),rr=rewardRows(),gm=['game_master','admin'].includes(r);
   const playerMode=isAdminAccount()&&ui.siteMode==='player';
-  const playerUpgrade=accountRole()==='player'&&!ui.demo;
+  const playerUpgrade=accountRole()==='player'&&!ui.demo&&currentEntity()?.slug==='sovereign-circle';
   const isMoxie=r==='game_master';
-  if(playerMode){
-    return `<main class="page"><section class="section" style="margin-top:4px"><div class="section-head"><h2>Player Profile</h2><span>your normal mode</span></div><div class="card player-profile-card"><div class="eyebrow">Sovereign Circle Player</div><h3>${esc(profile?.display_name||'Shawn')}</h3><p class="small-note">This is your live player account. Use the Player / Admin switch at the very top only when you need to maintain or QA the site.</p></div></section><section class="section account-section"><div class="section-head"><h2>Account</h2><span>live sync</span></div><div class="card account-card"><p class="small-note">${esc(session?.user?.email||'')}<br>Player Mode · Site Admin access available</p><div class="row"><button class="secondary" onclick="syncNow()">Sync</button><button class="danger" onclick="signOut()">Sign Out</button></div><button class="account-reset" onclick="emailPasswordReset()">Email Password Reset</button></div></section>${counselPreferenceCard()}${notificationSettingsCard()}</main>`;
-  }
+  if(isMoxie) return managerProfilePage(previewReadOnly());
+  if(playerMode) return playerProfilePage(false);
+  if(r==='player' && (previewReadOnly()||!isAdminAccount())) return playerProfilePage(previewReadOnly());
   const preview=previewReadOnly();
   const previewName=ui.adminPreview==='moxie'?'Moxie':ui.adminPreview==='vex'?'Vex':ui.adminPreview==='shawn'?'Shawn':'';
   const heading=r==='admin'?'Site Administration':preview?`${previewName} Preview`:isMoxie?'Moxie Scoring Console':'Administration';
@@ -942,7 +1023,7 @@ async function boot(){
   if(session) await loadRemote(); else {remoteStatus='ready';render()}
 }
 
-function clearRemote(){game=null;membership=null;games=[];memberships=[];entities=[];organizationStatuses=[];organizationMembers=[];directives=[];pointTransactions=[];rewards=[];tiers=[];scoringRules=[];ruleSections=[];appSettings=[];mailMessages=[];evidenceSubmissions=[];notificationEvents=[];notificationPreference=null;pushSubscriptions=[];currentPushEndpoint='';pushBusy=false;counselThread=null;counselMessages=[];counselHealth='unknown';counselLastError='';aiUsage=null;aiUsageLoading=false;aiUsageError='';aiUsageAttempted=false;profile=null;stopRealtime()}
+function clearRemote(){game=null;membership=null;games=[];memberships=[];entities=[];organizationStatuses=[];organizationMembers=[];allOrganizationMembers=[];directives=[];pointTransactions=[];rewards=[];tiers=[];scoringRules=[];ruleSections=[];appSettings=[];mailMessages=[];allMailMessages=[];multiGameData=new Map();evidenceSubmissions=[];notificationEvents=[];notificationPreference=null;pushSubscriptions=[];currentPushEndpoint='';pushBusy=false;counselThread=null;counselMessages=[];counselHealth='unknown';counselLastError='';aiUsage=null;aiUsageLoading=false;aiUsageError='';aiUsageAttempted=false;profile=null;stopRealtime()}
 async function loadRemote({silent=false}={}){
   if(!session) return;
   if(!silent){remoteStatus='loading'; render();}
@@ -967,6 +1048,8 @@ async function loadRemote({silent=false}={}){
       if(!['none','moxie','vex','shawn'].includes(ui.adminPreview)) ui.adminPreview='none';
     }
     let desired=ui.activeGameSlug||CONFIG.gameSlug;
+    const gameManager=memberships.some(m=>m.role==='game_master');
+    if(!admin&&gameManager&&ui.activePage!=='ledger') desired=CONFIG.gameSlug;
     if(admin&&ui.siteMode==='player') desired=CONFIG.gameSlug;
     if(admin&&ui.siteMode==='admin'&&ui.adminPreview==='vex') desired='infernal-firm-game';
     if(admin&&ui.siteMode==='admin'&&ui.adminPreview==='shawn') desired=CONFIG.gameSlug;
@@ -984,10 +1067,10 @@ async function loadRemote({silent=false}={}){
     if(admin&&ui.siteMode==='admin'&&ui.adminPreview==='shawn') ui.orgSlug='sovereign-circle';
     if(admin&&ui.siteMode==='admin'&&ui.adminPreview==='moxie') ui.orgSlug='nocturne-collective';
     saveUI();
-    const [er,osr,om,dr,pr,rr,tr,sr,rb,aset,mail,evid,notif,npref,psubs,cth,cmsg]=await Promise.all([
+    const [er,osr,omAll,dr,pr,rr,tr,sr,rb,aset,mail,evid,notif,npref,psubs,cth,cmsg,allPr,allRr,allTr,allMail]=await Promise.all([
       db.from('game_entities').select('*').order('name'),
       db.from('organization_status').select('*').eq('game_id',game.id),
-      db.from('organization_members').select('*').eq('game_id',game.id).eq('is_active',true).order('sort_order'),
+      db.from('organization_members').select('*').eq('is_active',true).order('sort_order'),
       db.from('directives').select('*').eq('game_id',game.id).order('created_at'),
       db.from('point_transactions').select('*').eq('game_id',game.id).order('created_at'),
       db.from('rewards').select('*').eq('game_id',game.id).order('milestone'),
@@ -1001,27 +1084,40 @@ async function loadRemote({silent=false}={}){
       db.from('user_notification_preferences').select('*').eq('game_id',game.id).eq('user_id',session.user.id).maybeSingle(),
       db.from('push_subscriptions').select('id,endpoint,created_at,updated_at,last_seen_at').eq('game_id',game.id).eq('user_id',session.user.id),
       db.from('counsel_threads').select('*').eq('game_id',game.id).eq('user_id',session.user.id).maybeSingle(),
-      db.from('counsel_messages').select('*').eq('game_id',game.id).eq('user_id',session.user.id).order('created_at',{ascending:true}).limit(300)
+      db.from('counsel_messages').select('*').eq('game_id',game.id).eq('user_id',session.user.id).order('created_at',{ascending:true}).limit(300),
+      db.from('point_transactions').select('*').in('game_id',ids).order('created_at'),
+      db.from('rewards').select('*').in('game_id',ids).order('milestone'),
+      db.from('reward_tiers').select('*').in('game_id',ids).order('cycle_order'),
+      db.from('mail_messages').select('*').in('game_id',ids).order('created_at',{ascending:false})
     ]);
-    for(const r of [er,osr,om,dr,pr,rr,tr,sr,rb,aset,mail,evid,notif,npref,psubs,cth,cmsg]) if(r.error) throw r.error;
-    entities=er.data||[];organizationStatuses=osr.data||[];organizationMembers=om.data||[];directives=dr.data||[];pointTransactions=pr.data||[];rewards=rr.data||[];tiers=tr.data||[];scoringRules=sr.data||[];ruleSections=rb.data||[];appSettings=aset.data||[];mailMessages=mail.data||[];evidenceSubmissions=evid.data||[];notificationEvents=notif.data||[];notificationPreference=npref.data||null;pushSubscriptions=psubs.data||[];counselThread=cth.data||null;counselMessages=cmsg.data||[];
+    for(const r of [er,osr,omAll,dr,pr,rr,tr,sr,rb,aset,mail,evid,notif,npref,psubs,cth,cmsg,allPr,allRr,allTr,allMail]) if(r.error) throw r.error;
+    entities=er.data||[];organizationStatuses=osr.data||[];organizationMembers=omAll.data||[];allOrganizationMembers=omAll.data||[];directives=dr.data||[];pointTransactions=pr.data||[];rewards=rr.data||[];tiers=tr.data||[];scoringRules=sr.data||[];ruleSections=rb.data||[];appSettings=aset.data||[];mailMessages=mail.data||[];allMailMessages=allMail.data||mailMessages;evidenceSubmissions=evid.data||[];notificationEvents=notif.data||[];notificationPreference=npref.data||null;pushSubscriptions=psubs.data||[];counselThread=cth.data||null;counselMessages=cmsg.data||[];
+    multiGameData=new Map(games.map(g=>[g.id,{points:(allPr.data||[]).filter(x=>x.game_id===g.id),rewards:(allRr.data||[]).filter(x=>x.game_id===g.id),tiers:(allTr.data||[]).filter(x=>x.game_id===g.id)}]));
     currentPushEndpoint='';
     if(pushSupported()){try{const reg=await navigator.serviceWorker.getRegistration();currentPushEndpoint=(await reg?.pushManager?.getSubscription())?.endpoint||''}catch{}}
     remoteStatus='ready';startRealtime();render();
     if(counselHealth==='unknown'&&counselAvailable()) checkCounselHealth();
   }catch(e){remoteError=e?.message||String(e);remoteStatus='error';render()}
 }
-function mailStateKey(rows=mailMessages){
+function mailStateKey(rows=visibleMailMessages()){
   return (rows||[]).map(m=>`${m.id}:${m.recipient_read_at||''}:${m.created_at||''}`).join('|');
+}
+function visibleGameIds(){
+  if(isMoxieView()) return availableGameRows().map(g=>g.id);
+  return game?.id?[game.id]:[];
 }
 async function syncMailNow(){
   if(!session||!game||ui.demo) return;
   try{
+    const ids=visibleGameIds(); if(!ids.length)return;
     const before=mailStateKey();
-    const {data,error}=await db.from('mail_messages').select('*').eq('game_id',game.id).order('created_at',{ascending:false});
+    const q=db.from('mail_messages').select('*').in('game_id',ids).order('created_at',{ascending:false});
+    const {data,error}=await q;
     if(error) throw error;
     const next=data||[];
-    if(mailStateKey(next)!==before){mailMessages=next;render()}
+    if(isMoxieView()) allMailMessages=next;
+    mailMessages=next.filter(m=>m.game_id===game.id);
+    if(mailStateKey()!==before)render();
   }catch(e){console.warn('Nocturnal Games Mail sync failed',e)}
 }
 function handleMailRealtime(payload){
@@ -1029,16 +1125,15 @@ function handleMailRealtime(payload){
     const type=payload?.eventType||'';
     const fresh=payload?.new;
     const old=payload?.old;
-    if(type==='INSERT'&&fresh?.id){
-      mailMessages=[fresh,...mailMessages.filter(m=>m.id!==fresh.id)];
-      render();
-    }else if(type==='UPDATE'&&fresh?.id){
-      mailMessages=mailMessages.map(m=>m.id===fresh.id?fresh:m);
-      render();
-    }else if(type==='DELETE'&&old?.id){
-      mailMessages=mailMessages.filter(m=>m.id!==old.id);
-      render();
-    }
+    const apply=(rows)=>{
+      if(type==='INSERT'&&fresh?.id)return [fresh,...rows.filter(m=>m.id!==fresh.id)];
+      if(type==='UPDATE'&&fresh?.id)return rows.map(m=>m.id===fresh.id?fresh:m);
+      if(type==='DELETE'&&old?.id)return rows.filter(m=>m.id!==old.id);
+      return rows;
+    };
+    allMailMessages=apply(allMailMessages);
+    mailMessages=apply(mailMessages);
+    render();
   }finally{
     clearTimeout(realtimeTimer);
     realtimeTimer=setTimeout(syncMailNow,250);
@@ -1055,23 +1150,30 @@ function scheduleRealtimeReconnect(){
 function startRealtime(){
   stopRealtime(); if(!game) return;
   realtimeStatus='connecting';
-  realtimeChannel=db.channel(`nocturnal-${game.id}`)
-    .on('postgres_changes',{event:'*',schema:'public',table:'point_transactions',filter:`game_id=eq.${game.id}`},queueRealtimeReload)
-    .on('postgres_changes',{event:'*',schema:'public',table:'rewards',filter:`game_id=eq.${game.id}`},queueRealtimeReload)
-    .on('postgres_changes',{event:'*',schema:'public',table:'directives',filter:`game_id=eq.${game.id}`},queueRealtimeReload)
-    .on('postgres_changes',{event:'*',schema:'public',table:'organization_members',filter:`game_id=eq.${game.id}`},queueRealtimeReload)
-    .on('postgres_changes',{event:'*',schema:'public',table:'organization_status',filter:`game_id=eq.${game.id}`},queueRealtimeReload)
-    .on('postgres_changes',{event:'*',schema:'public',table:'mail_messages',filter:`game_id=eq.${game.id}`},handleMailRealtime)
-    .on('postgres_changes',{event:'*',schema:'public',table:'evidence_submissions',filter:`game_id=eq.${game.id}`},queueRealtimeReload)
-    .on('postgres_changes',{event:'*',schema:'public',table:'app_settings',filter:`game_id=eq.${game.id}`},queueRealtimeReload)
-    .on('postgres_changes',{event:'*',schema:'public',table:'user_notification_preferences',filter:`game_id=eq.${game.id}`},queueRealtimeReload)
-    .on('postgres_changes',{event:'*',schema:'public',table:'push_subscriptions',filter:`game_id=eq.${game.id}`},queueRealtimeReload)
-    .on('postgres_changes',{event:'*',schema:'public',table:'counsel_messages',filter:`game_id=eq.${game.id}`},queueRealtimeReload)
+  const ids=visibleGameIds();
+  let channel=db.channel(`nocturnal-${ids.join('-')||game.id}`);
+  for(const gid of ids){
+    channel=channel
+      .on('postgres_changes',{event:'*',schema:'public',table:'point_transactions',filter:`game_id=eq.${gid}`},queueRealtimeReload)
+      .on('postgres_changes',{event:'*',schema:'public',table:'rewards',filter:`game_id=eq.${gid}`},queueRealtimeReload)
+      .on('postgres_changes',{event:'*',schema:'public',table:'directives',filter:`game_id=eq.${gid}`},queueRealtimeReload)
+      .on('postgres_changes',{event:'*',schema:'public',table:'organization_status',filter:`game_id=eq.${gid}`},queueRealtimeReload)
+      .on('postgres_changes',{event:'*',schema:'public',table:'mail_messages',filter:`game_id=eq.${gid}`},handleMailRealtime)
+      .on('postgres_changes',{event:'*',schema:'public',table:'evidence_submissions',filter:`game_id=eq.${gid}`},queueRealtimeReload);
+  }
+  const activeId=game.id;
+  channel=channel
+    .on('postgres_changes',{event:'*',schema:'public',table:'organization_members'},queueRealtimeReload)
+    .on('postgres_changes',{event:'*',schema:'public',table:'app_settings',filter:`game_id=eq.${activeId}`},queueRealtimeReload)
+    .on('postgres_changes',{event:'*',schema:'public',table:'user_notification_preferences',filter:`game_id=eq.${activeId}`},queueRealtimeReload)
+    .on('postgres_changes',{event:'*',schema:'public',table:'push_subscriptions',filter:`game_id=eq.${activeId}`},queueRealtimeReload)
+    .on('postgres_changes',{event:'*',schema:'public',table:'counsel_messages',filter:`game_id=eq.${activeId}`},queueRealtimeReload)
     .subscribe(status=>{
       realtimeStatus=status;
       if(status==='SUBSCRIBED') syncMailNow();
       else if(status==='CHANNEL_ERROR'||status==='TIMED_OUT'||status==='CLOSED') scheduleRealtimeReconnect();
     });
+  realtimeChannel=channel;
   startMailPolling();
 }
 function queueRealtimeReload(){clearTimeout(realtimeTimer);realtimeTimer=setTimeout(()=>loadRemote({silent:true}),350)}
@@ -1086,12 +1188,20 @@ document.addEventListener('visibilitychange',()=>{
 });
 window.addEventListener('focus',()=>{if(session&&game)syncMailNow()});
 
-window.go=p=>{if(p==='counsel'&&!personalCounselEnabled()){toast('In-app Counsel is turned off for this account');p='admin'}ui.activePage=p;saveUI();render();window.scrollTo({top:0,behavior:'smooth'})}
+window.go=async p=>{
+  if(p==='counsel'&&!personalCounselEnabled()){toast('In-app Counsel is turned off for this account');p='admin'}
+  const moxie=isMoxieView();
+  if(moxie&&p!=='ledger'&&game?.slug!==CONFIG.gameSlug){
+    ui.activeGameSlug=CONFIG.gameSlug;ui.activePage=p;saveUI();await loadRemote({silent:true});window.scrollTo({top:0,behavior:'smooth'});return;
+  }
+  ui.activePage=p;saveUI();render();window.scrollTo({top:0,behavior:'smooth'})
+}
 window.scrollToId=id=>document.getElementById(id)?.scrollIntoView({behavior:'smooth',block:'start'})
 window.enterDemo=()=>{ui.demo=true;ui.demoViewer='shawn';ui.activePage='home';saveUI();remoteStatus='ready';render();toast('Demo mode — live database unchanged')}
 window.leaveDemo=()=>{ui.demo=false;saveUI();if(session)loadRemote();else{remoteStatus='ready';render()}}
 window.toggleDemoViewer=()=>{ui.demoViewer=ui.demoViewer==='moxie'?'shawn':'moxie';saveUI();render();toast(ui.demoViewer==='moxie'?'Moxie / Game Master preview':'Shawn / Player preview')}
 window.setActiveGame=async slug=>{if(ui.demo)return;const target=availableGameRows().find(g=>g.slug===slug);if(!target)return;ui.activeGameSlug=target.slug;if(isAdminAccount()&&ui.siteMode==='admin'&&ui.adminPreview==='vex'&&target.slug!=='infernal-firm-game')ui.adminPreview='none';if(isAdminAccount()&&ui.siteMode==='admin'&&ui.adminPreview==='shawn'&&target.slug!=='sovereign-circle-game')ui.adminPreview='none';ui.activePage='home';saveUI();await loadRemote();window.scrollTo({top:0,behavior:'smooth'})}
+window.setLedgerGame=async slug=>{if(ui.demo)return;const target=availableGameRows().find(g=>g.slug===slug);if(!target||target.id===game?.id)return;ui.activeGameSlug=target.slug;ui.activePage='ledger';saveUI();await loadRemote();window.scrollTo({top:0,behavior:'smooth'})}
 window.setSiteMode=async mode=>{if(!isAdminAccount())return;ui.siteMode=mode==='admin'?'admin':'player';ui.adminPreview='none';if(ui.siteMode==='player')ui.activeGameSlug=CONFIG.gameSlug;ui.activePage='home';saveUI();await loadRemote();window.scrollTo({top:0,behavior:'smooth'})}
 window.setAdminPreview=async v=>{if(!isAdminAccount())return;ui.siteMode='admin';ui.adminPreview=['moxie','vex','shawn'].includes(v)?v:'none';if(ui.adminPreview==='vex')ui.activeGameSlug='infernal-firm-game';if(ui.adminPreview==='shawn')ui.activeGameSlug=CONFIG.gameSlug;ui.activePage='home';saveUI();await loadRemote();window.scrollTo({top:0,behavior:'smooth'})}
 window.previewOnly=()=>toast('Admin preview is read-only. Return to Admin to make changes.')
@@ -1111,6 +1221,46 @@ window.toggleOrganizationStatus=async slug=>{
 }
 window.openMember=id=>{const m=memberRows().find(x=>String(x.id)===String(id));if(!m)return;document.body.insertAdjacentHTML('beforeend',`<div class="modal-back" id="memberModal" onclick="if(event.target.id==='memberModal')closeMember()"><div class="modal member-modal">${m.image_path?`<img src="${esc(assetUrl(m.image_path))}" alt="${esc(m.name)}">`:`<div class="member-placeholder large">${esc(m.name.slice(0,1))}</div>`}<div class="member-modal-copy"><div class="eyebrow">${esc(m.role_name||'Member')}</div><h3>${esc(m.name)}</h3><strong>${esc(m.position_title)}</strong>${m.department?`<p>${esc(m.department)}</p>`:''}<button class="secondary" onclick="closeMember()">Close</button></div></div></div>`)}
 window.closeMember=()=>document.getElementById('memberModal')?.remove()
+
+window.openAddStaff=slug=>{
+  if(ui.demo||previewReadOnly())return;
+  const entity=entityRows().find(e=>e.slug===slug);if(!canAddStaffTo(entity))return toast('You can only add staff to your own organization.');
+  document.body.insertAdjacentHTML('beforeend',`<div class="modal-back" id="staffModal" onclick="if(event.target.id==='staffModal')document.getElementById('staffModal')?.remove()"><div class="modal staff-modal"><div class="eyebrow">${esc(entity.name.toUpperCase())}</div><h3>Add Staff</h3><p class="small-note">This publishes the staff member to your organization roster everywhere it appears in Nocturnal Games.</p><div class="form-grid"><div class="field"><label>Name</label><input id="staffName" class="input" maxlength="80" placeholder="Staff name"></div><div class="field"><label>Position / Title</label><input id="staffTitle" class="input" maxlength="120" placeholder="Position title"></div><div class="field"><label>Role <span>(optional)</span></label><input id="staffRole" class="input" maxlength="120" placeholder="Role / specialty"></div><div class="field"><label>Department <span>(optional)</span></label><input id="staffDepartment" class="input" maxlength="120" placeholder="Department"></div><div class="field"><label>Photo <span>(optional)</span></label><input id="staffPhoto" class="input" type="file" accept="image/jpeg,image/png,image/webp"></div><div class="row"><button class="secondary" onclick="document.getElementById('staffModal')?.remove()">Cancel</button><button id="saveStaffButton" class="primary" onclick="saveStaff('${esc(slug)}')">Add Staff</button></div></div></div></div>`);
+}
+window.saveStaff=async slug=>{
+  if(ui.demo||previewReadOnly()||!session)return;
+  const entity=entityRows().find(e=>e.slug===slug);if(!canAddStaffTo(entity))return toast('You can only add staff to your own organization.');
+  const name=String(document.getElementById('staffName')?.value||'').trim();
+  const position=String(document.getElementById('staffTitle')?.value||'').trim();
+  const role=String(document.getElementById('staffRole')?.value||'').trim();
+  const department=String(document.getElementById('staffDepartment')?.value||'').trim();
+  const file=document.getElementById('staffPhoto')?.files?.[0]||null;
+  if(!name||!position){toast('Name and position are required');return}
+  if(file&&file.size>5*1024*1024){toast('Staff photo must be 5 MB or smaller');return}
+  const btn=document.getElementById('saveStaffButton');if(btn){btn.disabled=true;btn.textContent='Adding…'}
+  try{
+    let imagePath='';
+    if(file){
+      const ext=(file.name.split('.').pop()||'webp').toLowerCase().replace(/[^a-z0-9]/g,'')||'webp';
+      const safe=slug.replace(/[^a-z0-9-]/gi,'-');
+      const path=`${session.user.id}/${safe}/${Date.now()}-${crypto.randomUUID().slice(0,8)}.${ext}`;
+      const up=await db.storage.from('org-roster').upload(path,file,{cacheControl:'3600',upsert:false,contentType:file.type});
+      if(up.error)throw up.error;
+      imagePath=db.storage.from('org-roster').getPublicUrl(path).data.publicUrl||'';
+    }
+    const targetGames=games.filter(g=>(g.player_entity_id===entity.id||g.game_master_entity_id===entity.id)&&memberships.some(m=>m.game_id===g.id&&m.entity_id===entity.id));
+    if(!targetGames.length)throw new Error('No editable game membership was found for this organization.');
+    const payload=targetGames.map(g=>{
+      const max=(allOrganizationMembers||[]).filter(m=>m.game_id===g.id&&m.entity_id===entity.id).reduce((n,m)=>Math.max(n,Number(m.sort_order||0)),0);
+      return {game_id:g.id,entity_id:entity.id,name,role_name:role||null,department:department||null,position_title:position,image_path:imagePath||null,sort_order:max+10,is_active:true};
+    });
+    const ins=await db.from('organization_members').insert(payload);
+    if(ins.error)throw ins.error;
+    document.getElementById('staffModal')?.remove();
+    await loadRemote({silent:true});
+    toast(`${name} added to ${entity.name}`);
+  }catch(e){toast(e?.message||String(e));if(btn){btn.disabled=false;btn.textContent='Add Staff'}}
+}
 window.syncNow=async()=>{if(ui.demo)return;counselHealth='unknown';await loadRemote();toast('Game state synced')}
 window.claimAccess=async()=>{
   const code=normalizeAccessCode(document.getElementById('accessCode')?.value||'');
@@ -1226,25 +1376,31 @@ function mailRecipientOptions(){
 }
 window.openComposeMail=(replyId='',prefillBody='',prefillSubject='',prefillCategory='message')=>{
   if(ui.demo||previewReadOnly())return;
-  const reply=mailMessages.find(m=>m.id===replyId);
-  const other=otherGameEntity();if(!other)return;
+  const reply=visibleMailMessages().find(m=>m.id===replyId);
+  const replyGame=reply?games.find(g=>g.id===reply.game_id):null;
+  const replyOther=reply?entityRows().find(e=>e.id===(reply.sender_entity_id===currentEntity()?.id?reply.recipient_entity_id:reply.sender_entity_id)):null;
+  const other=replyOther||otherGameEntity();if(!other&&!mailRecipientOptions().length)return;
   const subject=reply?(/^re:/i.test(reply.subject)?reply.subject:`Re: ${reply.subject}`):(prefillSubject||'');
   const options=mailRecipientOptions();
-  const recipientField=reply||!options.length?`<p class="small-note">To ${esc(other.name)} · ${esc(mailAddressForEntity(other.id))}</p>`:`<div class="field"><label>To</label><select id="mailRecipient" class="input">${options.map(o=>`<option value="${esc(o.gameId)}|${esc(o.recipientId)}" ${o.gameId===game?.id?'selected':''}>${esc(o.label)}</option>`).join('')}</select></div>`;
+  const recipientField=reply||!options.length?`<p class="small-note">To ${esc(other?.name||'')} · ${esc(mailAddressForEntity(other?.id))}</p>`:`<div class="field"><label>To</label><select id="mailRecipient" class="input">${options.map(o=>`<option value="${esc(o.gameId)}|${esc(o.recipientId)}" ${o.gameId===(replyGame?.id||game?.id)?'selected':''}>${esc(o.label)}</option>`).join('')}</select></div>`;
   const categories=[['message','Message'],['directive','Directive'],['request','Request'],['submission','Submission'],['scoring','Scoring'],['ruling','Ruling'],['reward','Reward']];
   document.body.insertAdjacentHTML('beforeend',`<div class="modal-back" id="composeModal"><div class="modal mail-compose"><div class="eyebrow">FROM ${esc(currentEntity()?.name||'')}</div><h3>New Nocturnal Games Mail</h3>${recipientField}<div class="field"><label>Type</label><select id="mailCategory" class="input">${categories.map(([v,l])=>`<option value="${v}" ${prefillCategory===v?'selected':''}>${esc(l)}</option>`).join('')}</select></div><div class="field"><label>Subject</label><input id="mailSubject" class="input" value="${esc(subject)}" placeholder="Subject"></div><div class="field"><label>Message</label><textarea id="mailBody" class="input" rows="8" placeholder="Official game correspondence…">${esc(prefillBody||'')}</textarea></div><div class="row"><button class="secondary" onclick="document.getElementById('composeModal')?.remove()">Cancel</button><button class="primary" onclick="sendMail('${esc(replyId)}')">Send</button></div></div></div>`);
 }
 window.sendMail=async(replyId='')=>{
   const subject=document.getElementById('mailSubject')?.value.trim()||'';const body=document.getElementById('mailBody')?.value.trim()||'';const category=document.getElementById('mailCategory')?.value||'message';
   if(!subject||!body){toast('Subject and message are required');return}
-  const reply=mailMessages.find(m=>m.id===replyId);
-  let targetGame=game,targetMembership=membership,sender=currentEntity(),recipient=otherGameEntity();
+  const reply=visibleMailMessages().find(m=>m.id===replyId);
+  let targetGame=reply?games.find(g=>g.id===reply.game_id):game;
+  let sender=currentEntity(),recipient=reply?entityRows().find(e=>e.id===(reply.sender_entity_id===currentEntity()?.id?reply.recipient_entity_id:reply.sender_entity_id)):otherGameEntity();
   if(!reply&&document.getElementById('mailRecipient')){
     const [gid,rid]=String(document.getElementById('mailRecipient').value||'').split('|');
     targetGame=games.find(g=>g.id===gid)||game;
-    targetMembership=memberships.find(m=>m.game_id===targetGame?.id)||membership;
     sender=entityRows().find(e=>e.id===targetGame?.game_master_entity_id)||sender;
     recipient=entityRows().find(e=>e.id===rid)||entityRows().find(e=>e.id===targetGame?.player_entity_id)||recipient;
+  }
+  if(reply){
+    const targetMembership=memberships.find(m=>m.game_id===targetGame?.id);
+    if(targetMembership) sender=entityRows().find(e=>e.id===targetMembership.entity_id)||sender;
   }
   if(!sender||!recipient||!targetGame)return;
   const id=crypto.randomUUID();
@@ -1252,11 +1408,10 @@ window.sendMail=async(replyId='')=>{
   const {error}=await db.from('mail_messages').insert(payload);if(error){toast(error.message);return}
   dispatchPushForSource('mail_messages',id,targetGame.id);
   document.getElementById('composeModal')?.remove();
-  if(targetGame.id!==game?.id){ui.activeGameSlug=targetGame.slug;saveUI();}
   await loadRemote({silent:true});mailMode='sent';ui.activePage='mail';saveUI();render();toast(`Sent to ${recipient.name}`)
 }
 window.openMail=async id=>{
-  const m=mailMessages.find(x=>x.id===id);if(!m)return;const incoming=m.recipient_entity_id===currentEntity()?.id;
+  const m=visibleMailMessages().find(x=>x.id===id);if(!m)return;const incoming=m.recipient_entity_id===currentEntity()?.id;
   if(incoming&&!m.recipient_read_at&&!ui.demo&&!previewReadOnly()){
     const readAt=new Date().toISOString();
     const {error}=await db.from('mail_messages').update({recipient_read_at:readAt}).eq('id',m.id);
@@ -1264,6 +1419,37 @@ window.openMail=async id=>{
   }
   const receipt=!incoming?`<div class="mail-read-receipt ${m.recipient_read_at?'read':''}">${m.recipient_read_at?`Read by ${esc(entityName(m.recipient_entity_id))} · ${esc(fmtDateTime(m.recipient_read_at))}`:`Sent · ${esc(fmtDateTime(m.created_at))}`}</div>`:'';
   document.body.insertAdjacentHTML('beforeend',`<div class="modal-back" id="mailModal"><div class="modal mail-view"><div class="eyebrow">${esc(m.category.toUpperCase())}</div><h3>${esc(m.subject)}</h3><div class="mail-from">${esc(entityName(m.sender_entity_id))} <span>${esc(mailAddressForEntity(m.sender_entity_id))}</span><br>to ${esc(entityName(m.recipient_entity_id))}</div>${receipt}<div class="mail-body">${esc(m.body).replace(/\n/g,'<br>')}</div><div class="row"><button class="secondary" onclick="document.getElementById('mailModal')?.remove()">Close</button>${incoming&&!previewReadOnly()?`<button class="primary" onclick="document.getElementById('mailModal')?.remove();openComposeMail('${esc(m.id)}')">Reply</button>`:''}</div></div></div>`);render();
+}
+window.openIssueGameItem=gameId=>{
+  if(ui.demo||previewReadOnly()||!isMoxieView())return;
+  const g=games.find(x=>x.id===gameId);if(!g)return;
+  const infernal=g.slug==='infernal-firm-game',noun=infernal?'Request':'Directive',prefix=infernal?'REQ':'SD';
+  document.body.insertAdjacentHTML('beforeend',`<div class="modal-back" id="issueModal" onclick="if(event.target.id==='issueModal')document.getElementById('issueModal')?.remove()"><div class="modal"><div class="eyebrow">${esc(gameLabel(g).toUpperCase())}</div><h3>Issue ${esc(noun)}</h3><p class="small-note">Create the official ${esc(noun)} and deliver it through Nocturnal Games Mail without switching the rest of your dashboard.</p><div class="form-grid"><div class="field"><label>${esc(noun)} Code</label><input id="quickIssueCode" class="input" placeholder="${prefix}-###"></div><div class="field"><label>Title</label><input id="quickIssueTitle" class="input" placeholder="${esc(noun)} title"></div><div class="field"><label>${esc(noun)} Text</label><textarea id="quickIssueBody" class="input" rows="5" placeholder="Requirements, deadline, evidence rules…"></textarea></div><div class="row"><button class="secondary" onclick="document.getElementById('issueModal')?.remove()">Cancel</button><button id="quickIssueButton" class="primary" onclick="issueGameItem('${esc(gameId)}')">Issue + Send</button></div></div></div></div>`);
+}
+window.issueGameItem=async gameId=>{
+  if(ui.demo||previewReadOnly()||!session)return;
+  const g=games.find(x=>x.id===gameId);if(!g)return;
+  const infernal=g.slug==='infernal-firm-game',noun=infernal?'Request':'Directive',category=infernal?'request':'directive';
+  const code=normalizeDirectiveCode(document.getElementById('quickIssueCode')?.value||'');
+  const title=String(document.getElementById('quickIssueTitle')?.value||'').trim();
+  const body=String(document.getElementById('quickIssueBody')?.value||'').trim();
+  if(!code||!title||!body){toast(`Code, title and ${noun} text are required`);return}
+  const mem=memberships.find(m=>m.game_id===g.id&&m.role==='game_master');
+  const sender=entityRows().find(e=>e.id===g.game_master_entity_id),recipient=entityRows().find(e=>e.id===g.player_entity_id);
+  if(!mem||!sender||!recipient){toast('Game Manager access is not available for that game');return}
+  const btn=document.getElementById('quickIssueButton');if(btn){btn.disabled=true;btn.textContent='Issuing…'}
+  try{
+    const now=new Date().toISOString();
+    const ins=await db.from('directives').insert({game_id:g.id,code,title,description:body,status:'issued',issued_by_user_id:session.user.id,issued_at:now}).select().single();
+    if(ins.error)throw ins.error;
+    const mid=crypto.randomUUID();
+    const mail=await db.from('mail_messages').insert({id:mid,game_id:g.id,thread_id:mid,sender_entity_id:sender.id,recipient_entity_id:recipient.id,sender_user_id:session.user.id,subject:`${code} — ${title}`,body,category});
+    if(mail.error)throw mail.error;
+    dispatchPushForSource('mail_messages',mid,g.id);
+    document.getElementById('issueModal')?.remove();
+    await loadRemote({silent:true});
+    toast(`${code} issued to ${recipient.name}`);
+  }catch(e){toast(e?.message||String(e));if(btn){btn.disabled=false;btn.textContent='Issue + Send'}}
 }
 window.issueDirective=async()=>{
   if(previewReadOnly())return previewOnly();
@@ -1363,6 +1549,8 @@ window.counselToDirective=id=>{const m=counselMessages.find(x=>x.id===id&&x.role
 window.issueCounselDirective=async()=>{const code=normalizeDirectiveCode(document.getElementById('counselDirectiveCode')?.value||'');const title=document.getElementById('counselDirectiveTitle')?.value.trim()||'';const body=document.getElementById('counselDirectiveBody')?.value.trim()||'';if(!code||!title||!body){toast('Code, title and Directive text are required');return}document.getElementById('counselDirectiveModal')?.remove();const now=new Date().toISOString();const ins=await db.from('directives').insert({game_id:game.id,code,title,description:body,status:'issued',issued_by_user_id:session.user.id,issued_at:now}).select().single();if(ins.error){toast(ins.error.message);return}const sender=currentEntity(),recipient=otherGameEntity();const mid=crypto.randomUUID();const mail=await db.from('mail_messages').insert({id:mid,game_id:game.id,thread_id:mid,sender_entity_id:sender.id,recipient_entity_id:recipient.id,sender_user_id:session.user.id,subject:`${code} — ${title}`,body,category:'directive'});if(mail.error){toast(`Directive created, but Mail failed: ${mail.error.message}`);await loadRemote({silent:true});return}dispatchPushForSource('mail_messages',mid);await loadRemote({silent:true});toast(`${code} issued to ${recipient.name}`)}
 window.resetCounsel=async()=>{if(counselSending)return;if(!confirm(`Reset ${counselName()}? This clears this Nocturnal Games account's private Counsel history and starts a fresh AI conversation.`))return;try{const {data,error}=await db.functions.invoke('babybat-counsel',{body:{action:'reset'}});if(error)throw error;if(data?.error)throw new Error(data.error);counselThread=null;counselMessages=[];counselLastError='';render();toast('Private Counsel history reset')}catch(e){toast(e?.message||String(e))}}
 
+window.askRedeemGame=(gameId,id)=>{const g=games.find(x=>x.id===gameId);const r=rewardsForGame(g).find(x=>x.id===id);if(!g||!r)return;const player=entityRows().find(e=>e.id===g.player_entity_id);document.body.insertAdjacentHTML('beforeend',`<div class="modal-back" id="redeemModal"><div class="modal"><h3>Use ${esc(rewardMilestoneLabel(g,r.milestone))}?</h3><p>This marks the ${esc(player?.name||gameLabel(g))} reward as used while keeping it permanently in history.</p><div class="row"><button class="secondary" onclick="closeModal()">Cancel</button><button class="primary" onclick="redeemGame('${esc(gameId)}','${esc(id)}')">Confirm Use</button></div></div></div>`) }
+window.redeemGame=async(gameId,id)=>{if(ui.demo||previewReadOnly())return;const {error}=await db.from('rewards').update({status:'used'}).eq('id',id).eq('game_id',gameId).eq('status','available');if(error){toast(error.message);return}closeModal();await loadRemote({silent:true});toast('Reward moved to redeemed history')}
 window.askRedeem=id=>{const r=rewardRows().find(x=>x.id===id);if(!r)return;document.body.insertAdjacentHTML('beforeend',`<div class="modal-back" id="redeemModal"><div class="modal"><h3>Use ${esc(r.tier)} Reward?</h3><p>This removes it from the active Reward Chest but keeps it permanently in Redeemed Rewards. ${isGMView()?"Moxie's redemption clears the same shared reward from Shawn's chest.":''}</p><div class="row"><button class="secondary" onclick="closeModal()">Cancel</button><button class="primary" onclick="redeem('${r.id}')">Confirm Use</button></div></div></div>`)}
 window.closeModal=()=>document.getElementById('redeemModal')?.remove()
 window.redeem=async id=>{

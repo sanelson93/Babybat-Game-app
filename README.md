@@ -1,55 +1,53 @@
-# Nocturnal Games v3.2.3
+# Nocturnal Games v3.2.4
 
-## Multi-game foundation
-- Nocturnal Games now hosts two isolated live games:
-  - **Sovereign Circle Game** — Moxie / Nocturne Collective ↔ Shawn / Sovereign Circle.
-  - **Infernal Firm Game** — Moxie / Nocturne Collective ↔ Vex / The Infernal Firm.
-- Scores, Requests/Directives, rewards, rules, Mail, evidence, settings, rosters, and push events stay scoped to their own game.
-- The existing Sovereign game data and Counsel history are not merged into the Infernal game.
+## Moxie / unified Game Manager experience
+- Moxie no longer has a game selector on the main interface.
+- Her Home screen shows **both live games at the same time**:
+  - Sovereign Circle progress in green.
+  - Infernal Firm progress in red.
+- The surrounding Game Manager interface remains Nocturne purple/silver/black.
+- Each game card shows its current points, next 200-point milestone, and reward status directly underneath.
+- Infernal now correctly shows Reward I (200) and Reward II (400) unlocked at the established 434-point total.
+- The only place Moxie adds points is **Ledger**.
+- Ledger has a simple Sovereign / Infernal button pair so she can choose which game she is scoring without introducing a global game toggle.
+- Moxie's Profile page no longer contains a duplicate scoring console.
 
-## Moxie / Game Manager
-- Moxie gets a compact **GAME** selector for switching between Sovereign and Infernal without cluttering her normal interface.
-- The selected game controls the dashboard, score, ledger, submissions, roster, rules, and scoring console.
-- New Mail includes a **To** dropdown so Moxie can address either Shawn / Sovereign Circle or Vex / The Infernal Firm.
-- Cross-game Mail switches the working context to the destination game after sending, keeping Sent Mail and read receipts easy to follow.
-- Sovereign continues to use **Directives / SD-###**. Infernal uses **Requests / REQ-###**.
+## Mail
+- Moxie's Mail is one combined inbox/sent view across both games.
+- The **To** line is the game-recipient selector: Shawn / Sovereign Circle or Vex / The Infernal Firm.
+- Sending to one recipient does not switch the rest of Moxie's interface into that game.
+- Live refresh and read receipts remain enabled across both game mail streams.
 
-## Vex / The Infernal Firm
-- Full red-and-black Infernal Firm theme and uploaded organization/staff artwork are included.
-- Infernal roster includes Vex, Seraphine Morningstar, Piprix, Lucifer Morningstar, Vesper Morningstar, Malachar Morningstar, Mime, Grimm, and Mara Morningstar.
-- Master-ledger baseline is seeded without inventing missing history:
-  - established pre-#14 baseline: 372 points
-  - Request #14: +28
-  - Request #15: +30 with its established category breakdown
-  - Request #16: +4 Partial Compliance
-  - official total: **434**
-  - Reward II banked at 400; Reward III target 600 with 166 remaining
-- Unknown Request #1–#13 details and undisclosed Reward II contents remain unresolved rather than fabricated.
-- A one-time Infernal player access code can attach Vex's future account to the Infernal game; no email/account identity was guessed.
+## Organizations / staff
+- Everyone with Nocturnal Games access can view all active organization rosters: Nocturne Collective, Sovereign Circle, and The Infernal Firm.
+- Players and Game Managers get an **Add Staff** button only on their own organization.
+- Add Staff supports name, title, role, department, and an optional JPEG/PNG/WebP photo.
+- Staff photos are stored in the dedicated public `org-roster` Supabase Storage bucket with user-folder upload restrictions.
+- Nocturne additions are written to both games so Moxie's roster remains one consistent organization across the platform.
+
+## Reward progression
+- Reward milestones remain every **200 points**.
+- The Infernal Firm now has the full 4-step repeating reward tier structure seeded at 200/400/600/800.
+- Existing automatic reward unlocking remains active for future point transactions.
+
+## Multi-game integrity
+- Sovereign and Infernal scores, Directives/Requests, rules, evidence, reward histories, and ledgers remain separate underneath the unified Moxie experience.
+- Sovereign keeps **Directives / SD-###**.
+- Infernal keeps **Requests / REQ-###**.
+- Vex's established Infernal baseline remains 434 points without reconstructing unsupported Request #1–#13 details.
 
 ## Site Admin / QA
-- Admin has a game selector and read-only **Preview As Shawn / Moxie / Vex** controls.
-- Previewing Vex automatically opens the Infernal game and its red/black player experience.
-- Previewing Shawn automatically opens the Sovereign game.
-- Previewing Moxie uses whichever game is currently selected.
-- Preview mode does not impersonate or write as the previewed user.
-- Owner Control Center settings edit only the selected game.
-- Infernal Counsel is intentionally disabled until a dedicated Infernal Counsel personality/privacy model is defined; Sovereign + Nocturne Counsel remain unchanged in the Sovereign game.
+- Site Admin keeps the explicit game-context selector for maintenance only.
+- Preview As Shawn / Moxie / Vex remains read-only.
+- Moxie preview now reflects the unified two-game Home experience.
+- Vex and Shawn player Profile pages stay clean and do not expose scoring controls.
 
-## Push / Mail integrity
-- One installed Nocturnal Games PWA can now register the same push subscription across multiple game memberships.
-- Existing push-enabled accounts were carried into the new Infernal game.
-- Live Mail refresh and read receipts from v3.2.1/v3.2.2 are preserved.
+## Push / Counsel
+- Push remains multi-game capable for one installed PWA.
 - SMS remains removed.
-
-## Preserved
-- Nocturnal Games silver/black/purple platform branding.
-- Sovereign green styling and Nocturne purple styling.
-- Optional per-account in-app Counsel setting.
-- AI usage meter.
-- Private photo evidence, scoring, reward chest, organizations, auth, realtime Mail, read receipts, and iPhone keyboard-safe Counsel composer.
+- Existing Sovereign / Nocturne Counsel behavior is preserved; Infernal Counsel remains disabled until separately defined.
 
 ## Deploy
-Upload the **contents** of the ZIP to the existing Vercel project. The package is flat-root deployment ready.
+Upload the **contents** of the ZIP to the existing Vercel project. This package is flat-root deployment ready.
 
-This is a normal app update. A Home Screen reinstall should not be necessary unless iOS is showing stale PWA metadata/icon assets.
+This is a normal app update; a Home Screen reinstall should not be necessary unless iOS is showing stale PWA metadata/icon assets.
