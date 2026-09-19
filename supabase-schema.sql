@@ -76,3 +76,12 @@
 --   - Infernal Reward I was backfilled at 200; Reward II remains unlocked at 400.
 --   - Moxie's client aggregates both game summaries and both Mail streams while keeping
 --     the underlying game records isolated.
+
+-- v3.3.0 production notes:
+--   - rewards now use a tracked fulfillment lifecycle: available -> pending -> issued.
+--   - reward requests are initiated only by the owning player organization.
+--   - pending rewards are marked issued only by the Game Manager or Site Admin.
+--   - rewards now record requested_at/requested_by_user_id and issued_at/issued_by_user_id.
+--   - legacy used_at/used_by_user_id remain synchronized on issuance for audit compatibility.
+--   - reward status changes create notification_events for Moxie/player push delivery.
+--   - points remain cumulative; requesting/issuing a reward never spends points.

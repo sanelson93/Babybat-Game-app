@@ -1,5 +1,5 @@
-const CACHE='nocturnal-games-v324';
-const CORE=['./','./index.html','./styles.css?v=3.2.4','./config.js?v=3.2.4','./app.js?v=3.2.4','./manifest.json?v=3.2.4'];
+const CACHE='nocturnal-games-v330';
+const CORE=['./','./index.html','./styles.css?v=3.3.0','./config.js?v=3.3.0','./app.js?v=3.3.0','./manifest.json?v=3.3.0'];
 const ASSETS=['./nc-cress.webp','./nc-dusk.webp','./nc-eclipse.webp','./nc-ember.webp','./nc-jinx.webp','./nc-moxie.webp','./nc-nyx.webp','./nc-sable.webp','./nc-selene.webp','./nc-vega.webp','./nocturne-collective-logo.webp','./nocturnal-games-logo.webp','./nocturnal-games-icon-192.png','./nocturnal-games-icon-512.png','./sc-silk.webp','./sc-sage.webp','./sc-saint.webp','./sc-scales.webp','./sc-shawn.webp','./sc-sigma.webp','./sc-sinister.webp','./sc-sir.webp','./sc-sphinx.webp','./sovereign-circle-logo.webp','./infernal-firm-logo.webp','./infernal-firm-banner.webp','./if-vex.webp','./if-seraphine.webp','./if-piprix.webp','./if-lucifer.webp','./if-vesper.webp','./if-malachar.webp','./if-mime.webp','./if-grimm.webp','./if-mara.webp'];
 self.addEventListener('install',event=>event.waitUntil((async()=>{
   const cache=await caches.open(CACHE);
@@ -42,7 +42,7 @@ self.addEventListener('fetch',event=>{
 });
 
 
-// v3.2.4 — Web Push delivery for installed Nocturnal Games PWAs.
+// v3.3.0 — Web Push delivery for installed Nocturnal Games PWAs.
 self.addEventListener('push',event=>{
   let payload={title:'Nocturnal Games',body:'New game activity',url:'./',tag:'nocturnal-games'};
   try{

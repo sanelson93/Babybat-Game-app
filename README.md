@@ -1,51 +1,55 @@
-# Nocturnal Games v3.2.4
+# Nocturnal Games v3.3.0
+
+## Reward fulfillment flow
+v3.3 changes rewards from a one-tap redemption into a tracked request/fulfillment workflow.
+
+1. A reward unlocks every **200 points** and appears in the player's **Reward Chest** as Available.
+2. The player taps **Use** and confirms.
+3. The reward immediately leaves the Reward Chest and moves to **Pending Rewards**.
+4. Moxie sees the pending reward under that player's game card on her unified Home screen.
+5. After Moxie fulfills the reward outside the app, she taps **Mark Issued** and confirms.
+6. The reward moves to permanent **Reward History** as Issued.
+
+Points are never spent by requesting or issuing a reward. Reward milestones remain cumulative and continue every 200 points.
+
+The database records:
+- `requested_at`
+- `requested_by_user_id`
+- `issued_at`
+- `issued_by_user_id`
+
+Legacy `used_at` / `used_by_user_id` remain synchronized when a reward is issued for backwards-compatible audit exports.
+
+Reward state transitions are enforced server-side:
+- Player/owning organization: `available -> pending`
+- Game Manager/Site Admin: `pending -> issued`
+- Pending rewards cannot be requested twice.
+- Issued rewards remain in permanent history.
+
+Reward requests and issuance create game-scoped notification events and use the existing Nocturnal Games push pipeline.
 
 ## Moxie / unified Game Manager experience
-- Moxie no longer has a game selector on the main interface.
-- Her Home screen shows **both live games at the same time**:
-  - Sovereign Circle progress in green.
-  - Infernal Firm progress in red.
-- The surrounding Game Manager interface remains Nocturne purple/silver/black.
-- Each game card shows its current points, next 200-point milestone, and reward status directly underneath.
-- Infernal now correctly shows Reward I (200) and Reward II (400) unlocked at the established 434-point total.
-- The only place Moxie adds points is **Ledger**.
-- Ledger has a simple Sovereign / Infernal button pair so she can choose which game she is scoring without introducing a global game toggle.
-- Moxie's Profile page no longer contains a duplicate scoring console.
+- Moxie continues to see both live games on one Home screen with no global game toggle.
+- Sovereign progress remains green; Infernal progress remains red; the rest of Moxie's interface remains Nocturne purple/silver/black.
+- Pending rewards are visible directly beneath the correct game's progress bar.
+- **Mark Issued** appears only for pending rewards.
+- Ledger remains the only scoring workspace, with its Sovereign / Infernal game selector.
 
-## Mail
-- Moxie's Mail is one combined inbox/sent view across both games.
-- The **To** line is the game-recipient selector: Shawn / Sovereign Circle or Vex / The Infernal Firm.
-- Sending to one recipient does not switch the rest of Moxie's interface into that game.
-- Live refresh and read receipts remain enabled across both game mail streams.
+## Player experience
+- Reward Chest contains **Available rewards only**.
+- After Use + confirmation, a reward moves to **Pending Rewards** and is labeled as waiting on Moxie.
+- Issued rewards appear in **Reward History** on the Ledger page.
+- Requesting a reward never deducts points.
 
-## Organizations / staff
-- Everyone with Nocturnal Games access can view all active organization rosters: Nocturne Collective, Sovereign Circle, and The Infernal Firm.
-- Players and Game Managers get an **Add Staff** button only on their own organization.
-- Add Staff supports name, title, role, department, and an optional JPEG/PNG/WebP photo.
-- Staff photos are stored in the dedicated public `org-roster` Supabase Storage bucket with user-folder upload restrictions.
-- Nocturne additions are written to both games so Moxie's roster remains one consistent organization across the platform.
-
-## Reward progression
-- Reward milestones remain every **200 points**.
-- The Infernal Firm now has the full 4-step repeating reward tier structure seeded at 200/400/600/800.
-- Existing automatic reward unlocking remains active for future point transactions.
-
-## Multi-game integrity
-- Sovereign and Infernal scores, Directives/Requests, rules, evidence, reward histories, and ledgers remain separate underneath the unified Moxie experience.
-- Sovereign keeps **Directives / SD-###**.
-- Infernal keeps **Requests / REQ-###**.
-- Vex's established Infernal baseline remains 434 points without reconstructing unsupported Request #1–#13 details.
-
-## Site Admin / QA
-- Site Admin keeps the explicit game-context selector for maintenance only.
-- Preview As Shawn / Moxie / Vex remains read-only.
-- Moxie preview now reflects the unified two-game Home experience.
-- Vex and Shawn player Profile pages stay clean and do not expose scoring controls.
-
-## Push / Counsel
-- Push remains multi-game capable for one installed PWA.
+## Existing v3.2.4 behavior preserved
+- Moxie's combined Mail inbox/sent view and To-line recipient dropdown.
+- Separate Sovereign and Infernal scoring ledgers, rules, evidence, histories, and reward progress.
+- All organizations visible to all Nocturnal Games members.
+- Add Staff available only for a user's own organization.
+- Multi-game Push support.
+- Read receipts.
 - SMS remains removed.
-- Existing Sovereign / Nocturne Counsel behavior is preserved; Infernal Counsel remains disabled until separately defined.
+- Existing Sovereign / Nocturne Counsel behavior remains unchanged; Infernal Counsel remains disabled.
 
 ## Deploy
 Upload the **contents** of the ZIP to the existing Vercel project. This package is flat-root deployment ready.

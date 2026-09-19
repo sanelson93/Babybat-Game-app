@@ -1,4 +1,4 @@
-const APP_VERSION = '3.2.4';
+const APP_VERSION = '3.3.0';
 const UI_STORAGE = 'babybat-game-hub-ui-v312';
 const CONFIG = window.BABYBAT_CONFIG;
 const { createClient } = window.supabase;
@@ -245,7 +245,7 @@ function effectiveRole(){
 }
 function isGMView(){ return ['game_master','admin'].includes(effectiveRole()); }
 function previewReadOnly(){ return isAdminAccount() && ui.siteMode==='admin' && ui.adminPreview!=='none'; }
-function canRedeemView(){ return ['player','game_master','admin'].includes(effectiveRole()); }
+function canRedeemView(){ return effectiveRole()==='player'; }
 function roleLabel(r=effectiveRole()){ return ({player:'Player',game_master:'Game Master',admin:'Site Admin',viewer:'Viewer'})[r] || 'Player'; }
 function personLabel(){
   if(ui.demo) return ui.demoViewer==='moxie'?'Moxie':'Shawn';
@@ -404,17 +404,30 @@ function rewardMilestoneLabel(g,milestone){
   if(!tier?.name) return generic;
   return /^reward\s+/i.test(tier.name)?generic:`${generic} · ${tier.name}`;
 }
+function rewardStatusMeta(r){
+  const status=String(r?.status||'available');
+  if(status==='pending') return {label:'Pending',cls:'pending',detail:r.requested_at?`requested ${fmtDateTime(r.requested_at)}`:'waiting on Moxie'};
+  if(status==='issued') return {label:'Issued',cls:'issued',detail:r.issued_at?`issued ${fmtDateTime(r.issued_at)}`:'issued'};
+  if(status==='void') return {label:'Void',cls:'used',detail:'voided'};
+  return {label:'Available',cls:'available',detail:'ready to request'};
+}
 function moxieGameSummary(g){
   const p=gameProgress(g), rows=rewardsForGame(g).sort((a,b)=>Number(a.milestone)-Number(b.milestone));
   const player=entityRows().find(e=>e.id===g.player_entity_id);
   const theme=player?.slug==='infernal-firm'?'infernal':'sovereign';
   const unlocked=rows.filter(r=>Number(r.milestone)<=p.t);
-  const rewardLine=unlocked.length?unlocked.map(r=>`<div class="moxie-reward-row"><span><b>${esc(rewardMilestoneLabel(g,r.milestone))}</b><small>${Number(r.milestone)} points</small></span><span class="badge ${r.status==='used'?'used':'available'}">${r.status==='used'?'USED':'UNLOCKED'}</span>${r.status==='available'&&!previewReadOnly()?`<button class="use-btn" onclick="askRedeemGame('${esc(g.id)}','${esc(r.id)}')">Use</button>`:''}</div>`).join(''):`<div class="moxie-reward-row locked"><span><b>${esc(rewardMilestoneLabel(g,p.next))}</b><small>${p.left} points remaining</small></span><span class="badge">LOCKED</span></div>`;
+  const rewardLine=unlocked.length?unlocked.map(r=>{
+    const meta=rewardStatusMeta(r);
+    const detail=meta.detail?` · ${esc(meta.detail)}`:'';
+    const action=r.status==='pending'&&!previewReadOnly()?`<button class="issue-btn" onclick="askIssueRewardGame('${esc(g.id)}','${esc(r.id)}')">Mark Issued</button>`:'';
+    return `<div class="moxie-reward-row"><span><b>${esc(rewardMilestoneLabel(g,r.milestone))}</b><small>${Number(r.milestone)} points${detail}</small></span><span class="badge ${meta.cls}">${meta.label}</span>${action}</div>`;
+  }).join(''):`<div class="moxie-reward-row locked"><span><b>${esc(rewardMilestoneLabel(g,p.next))}</b><small>${p.left} points remaining</small></span><span class="badge locked">LOCKED</span></div>`;
   const nextUnlocked=rows.some(r=>Number(r.milestone)===p.next);
-  const nextLine=unlocked.length&&!nextUnlocked?`<div class="moxie-reward-row locked"><span><b>${esc(rewardMilestoneLabel(g,p.next))}</b><small>${p.left} points remaining</small></span><span class="badge">NEXT</span></div>`:'';
+  const nextLine=unlocked.length&&!nextUnlocked?`<div class="moxie-reward-row locked"><span><b>${esc(rewardMilestoneLabel(g,p.next))}</b><small>${p.left} points remaining</small></span><span class="badge locked">NEXT</span></div>`:'';
+  const pendingCount=unlocked.filter(r=>r.status==='pending').length;
   const noun=g.slug==='infernal-firm-game'?'Request':'Directive';
   const issue=!previewReadOnly()?`<button class="secondary compact moxie-issue-btn" onclick="openIssueGameItem('${esc(g.id)}')">Issue ${noun}</button>`:'';
-  return `<section class="card moxie-game-summary"><div class="moxie-game-head"><div><span class="eyebrow">${esc(player?.name||gameLabel(g))}</span><h3>${p.t} points</h3></div><span class="moxie-game-status ${theme}">${p.left} TO ${p.next}</span></div><div class="moxie-progress ${theme}"><i style="width:${p.pct}%"></i></div><div class="moxie-progress-scale"><span>${p.floor}</span><span>${p.next}</span></div><div class="moxie-rewards">${rewardLine}${nextLine}</div>${issue}</section>`;
+  return `<section class="card moxie-game-summary"><div class="moxie-game-head"><div><span class="eyebrow">${esc(player?.name||gameLabel(g))}</span><h3>${p.t} points</h3></div><span class="moxie-game-status ${theme}">${pendingCount?`${pendingCount} PENDING · `:''}${p.left} TO ${p.next}</span></div><div class="moxie-progress ${theme}"><i style="width:${p.pct}%"></i></div><div class="moxie-progress-scale"><span>${p.floor}</span><span>${p.next}</span></div><div class="moxie-rewards">${rewardLine}${nextLine}</div>${issue}</section>`;
 }
 function moxieHome(){
   const rows=availableGameRows();
@@ -432,7 +445,7 @@ function dashboardHero(p){
   return `<section class="hero hero-${esc(theme)}"><div class="hero-brand"><img src="${esc(assetUrl(logo))}" alt="${esc(title)} logo"><div><span>${gm?'GAME MASTER':'PLAYER DASHBOARD'}</span><h2>${esc(title)}</h2><p>${esc(sub)}</p></div></div><div class="hero-scoreline"><div><div class="score-big">${p.within}<span class="pts">PTS</span></div><div class="lifetime-inline">${p.t} lifetime points</div></div><div class="next-orb"><strong>${p.left}</strong><span>TO ${esc(p.tier.toUpperCase())}</span></div></div><div class="bar-wrap"><div class="bar-label"><span>${p.floor}</span><span>${p.next} · ${esc(p.tier.toUpperCase())}</span></div><div class="bar"><i style="width:${p.pct}%"></i></div></div></section>`;
 }
 function home(){
-  const p=progress(), rr=rewardRows(), available=rr.filter(r=>r.status==='available'), led=ledgerItems();
+  const p=progress(), rr=rewardRows(), available=rr.filter(r=>r.status==='available'), pending=rr.filter(r=>r.status==='pending'), led=ledgerItems();
   if(effectiveRole()==='admin') return adminHome(p,available,led);
   if(isMoxieView()) return moxieHome();
   return `<main class="page">${dashboardHero(p)}
@@ -440,6 +453,7 @@ function home(){
   ${gameDesk()}
   <section class="section"><div class="grid2"><div class="mini"><strong>${led.length}</strong><span>Scored ${esc(gameItemPlural().toLowerCase())}</span></div><div class="mini"><strong>${available.length}</strong><span>Rewards ready</span></div></div></section>
   <section class="section"><div class="section-head"><h2>Reward Chest</h2><span>${available.length} available</span></div>${rewardChest(available,p,false)}</section>
+  ${pending.length?`<section class="section"><div class="section-head"><h2>Pending Rewards</h2><span>waiting on Moxie</span></div>${pendingRewards(pending)}</section>`:''}
   <section class="section"><div class="section-head"><h2>Organizations</h2><span>all organizations</span></div>${organizationTeasers()}</section>
   <section class="section"><div class="section-head"><h2>Recent Activity</h2><span>Permanent ledger</span></div>${led.slice().reverse().slice(0,4).map(activity).join('')}</section></main>`;
 }
@@ -451,7 +465,8 @@ function adminHome(p,available,led){
   <section class="section"><div class="section-head"><h2>Live Game</h2><span>${p.t} lifetime points · ${esc(gameLabel())}</span></div><div class="card admin-score"><div><strong>${p.left}</strong><span>points to ${esc(p.tier)}</span></div><div><strong>${available.length}</strong><span>rewards ready</span></div><div><strong>${led.length}</strong><span>scored ${esc(gameItemPlural().toLowerCase())}</span></div></div></section>
   <section class="section"><div class="section-head"><h2>Quick Control</h2><span>${esc(gameLabel())}</span></div><div class="quick-actions"><button class="action-tile" onclick="go('admin')"><b>Control Center</b><span>Settings / scoring / storage</span></button>${counselTile}<button class="action-tile" onclick="go('mail')"><b>Nocturnal Games Mail</b><span>Official game correspondence</span></button><button class="action-tile" onclick="go('org')"><b>Organizations</b><span>Review active-game rosters</span></button></div></section></main>`;
 }
-function rewardChest(av,p,moxie=false){if(!av.length)return `<div class="empty">No unlocked rewards in the chest yet.<br><br><strong style="color:#d8dce2">Next:</strong> ${esc(p.tier)} at ${p.next} points.</div>`;return av.map(r=>`<div class="card reward-card"><div class="reward-icon">${r.tier==='Sovereign'?'♛':'◆'}</div><div class="reward-main"><h3>${esc(r.tier)} Reward</h3><p>Unlocked at ${r.milestone} · ${esc(r.game)}</p></div><span class="badge available">Available</span>${canRedeemView()?`<button class="use-btn" ${previewReadOnly()?'disabled':''} onclick="${previewReadOnly()?'previewOnly()':`askRedeem('${r.id}')`}">${moxie?`USE ${playerName().toUpperCase()}'S`:'USE'}</button>`:''}</div>`).join('')}
+function rewardChest(av,p,moxie=false){if(!av.length)return `<div class="empty">No unlocked rewards in the chest yet.<br><br><strong style="color:#d8dce2">Next:</strong> ${esc(p.tier)} at ${p.next} points.</div>`;return av.map(r=>`<div class="card reward-card"><div class="reward-icon">${r.tier==='Sovereign'?'♛':'◆'}</div><div class="reward-main"><h3>${esc(r.tier)} Reward</h3><p>Unlocked at ${r.milestone} · ${esc(r.game)}</p></div><span class="badge available">Available</span>${canRedeemView()?`<button class="use-btn" ${previewReadOnly()?'disabled':''} onclick="${previewReadOnly()?'previewOnly()':`askRedeem('${r.id}')`}">USE</button>`:''}</div>`).join('')}
+function pendingRewards(xs){return xs.map(r=>`<div class="card reward-card pending-card"><div class="reward-icon">◷</div><div class="reward-main"><h3>${esc(r.tier)} Reward</h3><p>${r.milestone} pts · requested ${esc(fmtDateTime(r.requested_at)||'recently')} · waiting on Moxie</p></div><span class="badge pending">Pending</span></div>`).join('')}
 function organizationTeasers(){
   const data=entityRows().filter(e=>e.is_active!==false);
   return `<div class="org-teasers">${data.map(e=>`<button class="org-teaser ${esc(e.theme_key||'')}" onclick="openOrganization('${e.slug}')"><img src="${esc(assetUrl(e.logo_path||''))}" alt=""><div><b>${esc(e.name)}</b><span>${memberRows().filter(m=>m.entity_slug===e.slug||m.entity_id===e.id).length} members</span></div><span class="chev">›</span></button>`).join('')}</div>`;
@@ -620,9 +635,9 @@ function ledgerGameTabs(){
 function ledgerPage(){
   const led=ledgerItems(), rr=rewardRows(), moxie=isMoxieView();
   const scoring=moxie?`<section class="section ledger-scoring"><div class="section-head"><h2>Score ${esc(gameItemPlural())}</h2><span>${esc(gameLabel())}</span></div>${scoreBuilderForm()}</section>`:'';
-  return `<main class="page"><section class="section" style="margin-top:4px"><div class="section-head"><h2>Game Ledger</h2><span>${total()} lifetime points</span></div>${ledgerGameTabs()}${moxie?`<div class="notice">This is the only scoring workspace. Pick the game above, build the score, and post it here.</div>`:''}</section>${scoring}<section class="section"><div class="section-head"><h2>${esc(gameLabel())} History</h2><span>${led.length} scored</span></div>${led.length?led.slice().reverse().map(x=>{const sign=x.total>=0?'+':'';return `<details class="card rule"><summary><span>${esc(x.directive)} · ${sign}${x.total}</span></summary><div class="rule-body"><p>${esc(x.reason||'')}</p>${x.breakdown.map(([n,v])=>`<div class="score-row" style="margin-top:8px"><span>${esc(n)}</span><strong class="points ${v<0?'negative':''}">${v>0?'+':''}${v}</strong></div>`).join('')}<div class="divider"></div><div class="score-row"><strong>Total</strong><strong class="points ${x.total<0?'negative':''}">${sign}${x.total}</strong></div></div></details>`}).join(''):`<div class="empty">No scoring history yet.</div>`}</section><section class="section"><div class="section-head"><h2>Redeemed Rewards</h2><span>never deleted</span></div>${redeemedArchive(rr)}</section></main>`;
+  return `<main class="page"><section class="section" style="margin-top:4px"><div class="section-head"><h2>Game Ledger</h2><span>${total()} lifetime points</span></div>${ledgerGameTabs()}${moxie?`<div class="notice">This is the only scoring workspace. Pick the game above, build the score, and post it here.</div>`:''}</section>${scoring}<section class="section"><div class="section-head"><h2>${esc(gameLabel())} History</h2><span>${led.length} scored</span></div>${led.length?led.slice().reverse().map(x=>{const sign=x.total>=0?'+':'';return `<details class="card rule"><summary><span>${esc(x.directive)} · ${sign}${x.total}</span></summary><div class="rule-body"><p>${esc(x.reason||'')}</p>${x.breakdown.map(([n,v])=>`<div class="score-row" style="margin-top:8px"><span>${esc(n)}</span><strong class="points ${v<0?'negative':''}">${v>0?'+':''}${v}</strong></div>`).join('')}<div class="divider"></div><div class="score-row"><strong>Total</strong><strong class="points ${x.total<0?'negative':''}">${sign}${x.total}</strong></div></div></details>`}).join(''):`<div class="empty">No scoring history yet.</div>`}</section><section class="section"><div class="section-head"><h2>Reward History</h2><span>issued rewards</span></div>${rewardHistory(rr)}</section></main>`;
 }
-function redeemedArchive(rr=rewardRows()){const xs=rr.filter(r=>r.status==='used');if(!xs.length)return `<div class="empty">No rewards have been redeemed.</div>`;return xs.map(r=>`<div class="card reward-card"><div class="reward-icon">✓</div><div class="reward-main"><h3>${esc(r.tier)} Reward</h3><p>${r.milestone} pts · used ${fmtDate(r.used_at)}</p></div><span class="badge used">Used</span></div>`).join('')}
+function rewardHistory(rr=rewardRows()){const xs=rr.filter(r=>r.status==='issued');if(!xs.length)return `<div class="empty">No rewards have been issued yet.</div>`;return xs.slice().sort((a,b)=>String(b.issued_at||'').localeCompare(String(a.issued_at||''))).map(r=>`<div class="card reward-card"><div class="reward-icon">✓</div><div class="reward-main"><h3>${esc(r.tier)} Reward</h3><p>${r.milestone} pts · issued ${esc(fmtDateTime(r.issued_at)||'')}</p></div><span class="badge issued">Issued</span></div>`).join('')}
 
 function isStandalonePwa(){return window.matchMedia?.('(display-mode: standalone)')?.matches===true || window.navigator.standalone===true}
 function isIOSDevice(){return /iPad|iPhone|iPod/.test(navigator.userAgent)||navigator.platform==='MacIntel'&&navigator.maxTouchPoints>1}
@@ -931,7 +946,7 @@ function adminControlCenter(){
   <section class="section"><div class="section-head"><h2>Scoring Rules</h2><span>${esc(gameLabel())} only</span></div><div class="admin-rule-list">${scoringRules.map(r=>`<div class="admin-rule-row"><span>${esc(r.label)}</span><input class="input score-admin-input" data-score-id="${esc(r.id)}" type="number" value="${Number(r.points)}"></div>`).join('')}</div><button class="primary full-btn" onclick="saveScoringRules()">Save Scoring Values</button></section>
   <section class="section"><div class="section-head"><h2>Diagnostics</h2><span>v${APP_VERSION}</span></div><div class="card diagnostics"><div><span>Supabase</span><b class="ok">CONNECTED</b></div><div><span>Active game</span><b>${esc(gameLabel())}</b></div><div><span>Mail records</span><b>${mailMessages.length}</b></div><div><span>Evidence records</span><b>${evidenceSubmissions.length}</b></div><div><span>Push queue</span><b>${notificationEvents.filter(n=>n.push_status==='queued').length}</b></div></div></section>`;
 }
-function adminRewards(rr){const av=rr.filter(r=>r.status==='available');if(!av.length)return `<div class="empty">No available rewards to redeem.</div>`;return av.map(r=>`<div class="card reward-card"><div class="reward-icon">◆</div><div class="reward-main"><h3>${esc(r.tier)} Reward</h3><p>Milestone ${r.milestone}</p></div>${canRedeemView()?`<button class="use-btn" ${previewReadOnly()?'disabled':''} onclick="${previewReadOnly()?'previewOnly()':`askRedeem('${r.id}')`}">${isGMView()?`USE ${playerName().toUpperCase()}'S`:'USE'}</button>`:''}</div>`).join('')}
+function adminRewards(rr){if(!rr.length)return `<div class="empty">No rewards have unlocked yet.</div>`;return rr.slice().sort((a,b)=>Number(a.milestone)-Number(b.milestone)).map(r=>{const meta=rewardStatusMeta(r);return `<div class="card reward-card"><div class="reward-icon">◆</div><div class="reward-main"><h3>${esc(r.tier)} Reward</h3><p>Milestone ${r.milestone}${meta.detail?` · ${esc(meta.detail)}`:''}</p></div><span class="badge ${meta.cls}">${meta.label}</span></div>`}).join('')}
 
 function loadingScreen(){return `<main class="auth-wrap"><div class="auth-card">${appLogo('auth-logo')}<div class="eyebrow auth-eyebrow">Nocturnal Games</div><h1>Opening the vault…</h1><div class="loader"></div><p class="small-note">NOCTURNAL v${APP_VERSION}</p></div></main>`}
 function loginScreen(){
@@ -1549,15 +1564,17 @@ window.counselToDirective=id=>{const m=counselMessages.find(x=>x.id===id&&x.role
 window.issueCounselDirective=async()=>{const code=normalizeDirectiveCode(document.getElementById('counselDirectiveCode')?.value||'');const title=document.getElementById('counselDirectiveTitle')?.value.trim()||'';const body=document.getElementById('counselDirectiveBody')?.value.trim()||'';if(!code||!title||!body){toast('Code, title and Directive text are required');return}document.getElementById('counselDirectiveModal')?.remove();const now=new Date().toISOString();const ins=await db.from('directives').insert({game_id:game.id,code,title,description:body,status:'issued',issued_by_user_id:session.user.id,issued_at:now}).select().single();if(ins.error){toast(ins.error.message);return}const sender=currentEntity(),recipient=otherGameEntity();const mid=crypto.randomUUID();const mail=await db.from('mail_messages').insert({id:mid,game_id:game.id,thread_id:mid,sender_entity_id:sender.id,recipient_entity_id:recipient.id,sender_user_id:session.user.id,subject:`${code} — ${title}`,body,category:'directive'});if(mail.error){toast(`Directive created, but Mail failed: ${mail.error.message}`);await loadRemote({silent:true});return}dispatchPushForSource('mail_messages',mid);await loadRemote({silent:true});toast(`${code} issued to ${recipient.name}`)}
 window.resetCounsel=async()=>{if(counselSending)return;if(!confirm(`Reset ${counselName()}? This clears this Nocturnal Games account's private Counsel history and starts a fresh AI conversation.`))return;try{const {data,error}=await db.functions.invoke('babybat-counsel',{body:{action:'reset'}});if(error)throw error;if(data?.error)throw new Error(data.error);counselThread=null;counselMessages=[];counselLastError='';render();toast('Private Counsel history reset')}catch(e){toast(e?.message||String(e))}}
 
-window.askRedeemGame=(gameId,id)=>{const g=games.find(x=>x.id===gameId);const r=rewardsForGame(g).find(x=>x.id===id);if(!g||!r)return;const player=entityRows().find(e=>e.id===g.player_entity_id);document.body.insertAdjacentHTML('beforeend',`<div class="modal-back" id="redeemModal"><div class="modal"><h3>Use ${esc(rewardMilestoneLabel(g,r.milestone))}?</h3><p>This marks the ${esc(player?.name||gameLabel(g))} reward as used while keeping it permanently in history.</p><div class="row"><button class="secondary" onclick="closeModal()">Cancel</button><button class="primary" onclick="redeemGame('${esc(gameId)}','${esc(id)}')">Confirm Use</button></div></div></div>`) }
-window.redeemGame=async(gameId,id)=>{if(ui.demo||previewReadOnly())return;const {error}=await db.from('rewards').update({status:'used'}).eq('id',id).eq('game_id',gameId).eq('status','available');if(error){toast(error.message);return}closeModal();await loadRemote({silent:true});toast('Reward moved to redeemed history')}
-window.askRedeem=id=>{const r=rewardRows().find(x=>x.id===id);if(!r)return;document.body.insertAdjacentHTML('beforeend',`<div class="modal-back" id="redeemModal"><div class="modal"><h3>Use ${esc(r.tier)} Reward?</h3><p>This removes it from the active Reward Chest but keeps it permanently in Redeemed Rewards. ${isGMView()?"Moxie's redemption clears the same shared reward from Shawn's chest.":''}</p><div class="row"><button class="secondary" onclick="closeModal()">Cancel</button><button class="primary" onclick="redeem('${r.id}')">Confirm Use</button></div></div></div>`)}
+window.askIssueRewardGame=(gameId,id)=>{const g=games.find(x=>x.id===gameId);const r=rewardsForGame(g).find(x=>x.id===id);if(!g||!r||r.status!=='pending')return;const player=entityRows().find(e=>e.id===g.player_entity_id);document.body.insertAdjacentHTML('beforeend',`<div class="modal-back" id="redeemModal"><div class="modal"><h3>Mark ${esc(rewardMilestoneLabel(g,r.milestone))} issued?</h3><p>Only confirm after you have actually delivered this reward to ${esc(player?.name||gameLabel(g))} outside Nocturnal Games. This moves it from Pending to permanent Reward History.</p><div class="row"><button class="secondary" onclick="closeModal()">Cancel</button><button class="primary" onclick="issueRewardGame('${esc(gameId)}','${esc(id)}')">Mark Issued</button></div></div></div>`) }
+window.issueRewardGame=async(gameId,id)=>{if(ui.demo||previewReadOnly())return;if(effectiveRole()!=='game_master'&&!isAdminAccount()){toast('Game Manager permission required');return}const {error}=await db.from('rewards').update({status:'issued'}).eq('id',id).eq('game_id',gameId).eq('status','pending');if(error){toast(error.message);return}closeModal();dispatchPushForSource('rewards',id,gameId);await loadRemote({silent:true});toast('Reward marked issued')}
+window.askRedeem=id=>{const r=rewardRows().find(x=>x.id===id);if(!r||r.status!=='available')return;document.body.insertAdjacentHTML('beforeend',`<div class="modal-back" id="redeemModal"><div class="modal"><h3>Use ${esc(r.tier)} Reward?</h3><p>This sends the reward to Moxie as <strong>Pending</strong>. It leaves your Reward Chest immediately, your points are not spent, and Moxie will mark it Issued after she fulfills it outside the app.</p><div class="row"><button class="secondary" onclick="closeModal()">Cancel</button><button class="primary" onclick="redeem('${r.id}')">Confirm Use</button></div></div></div>`) }
 window.closeModal=()=>document.getElementById('redeemModal')?.remove()
 window.redeem=async id=>{
   if(ui.demo){closeModal();toast('Demo does not change the live reward chest');return}
   if(previewReadOnly()){closeModal();previewOnly();return}
-  const {error}=await db.from('rewards').update({status:'used'}).eq('id',id).eq('status','available');
-  if(error){toast(error.message);return}closeModal();await loadRemote();toast('Reward moved to redeemed history')
+  if(effectiveRole()!=='player'){closeModal();toast('Only the player can request a reward');return}
+  const {error}=await db.from('rewards').update({status:'pending'}).eq('id',id).eq('status','available');
+  if(error){toast(error.message);return}
+  closeModal();dispatchPushForSource('rewards',id,game.id);await loadRemote();toast('Reward sent to Moxie · Pending')
 }
 window.updateScoreBuilderTotal=()=>{
   const checked=[...document.querySelectorAll('.score-rule-check:checked')];
